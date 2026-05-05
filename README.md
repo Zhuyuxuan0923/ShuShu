@@ -50,43 +50,45 @@ flowchart LR
         ACTIONS["push/PR 自动触发<br/>dbt build + docs<br/>PostgreSQL 服务容器"]
     end
 
-    GH & WX & EC --> HTTP
+    GH --> HTTP
+    WX --> HTTP
+    EC --> HTTP
     BIZ --> JDBC
-    HTTP & JDBC --> ODS
-    ODS --> DWD --> DWS --> ADS
-    DWD & DWS & ADS --> TEST
+    HTTP --> ODS
+    JDBC --> ODS
+    ODS --> DWD
+    DWD --> DWS
+    DWS --> ADS
+    DWD --> TEST
+    DWS --> TEST
+    ADS --> TEST
     TEST --> DOCS
     ODS --> TEST
 
-    Orchestration --> Ingest
-    Orchestration --> Quality
+    DAG_FULL --> Ingest
+    DAG_FULL --> Quality
     Quality --> Alert
 
     ACTIONS --> Quality
     ACTIONS -.->|"Build 徽章"| ACTIONS
 
-    %% --- color styles ---
-    classDef source fill:#d4fcdc,stroke:#2ea043,color:#0f3b1e
-    classDef ingest fill:#d6e8ff,stroke:#1f6feb,color:#0c2d6b
-    classDef ods fill:#e3d4fc,stroke:#8250df,color:#2a1252
-    classDef dwd fill:#f0d4fc,stroke:#9a28c0,color:#3a0f4a
-    classDef dws fill:#d4ecfc,stroke:#2563eb,color:#0f2d52
-    classDef ads fill:#fcd4e8,stroke:#d1246e,color:#4a0f28
-    classDef quality fill:#fff3cd,stroke:#d4a017,color:#5c4100
-    classDef orch fill:#d4f4f4,stroke:#0891b2,color:#083344
-    classDef alert fill:#fdd4d4,stroke:#dc2626,color:#7f1d1d
-    classDef cicd fill:#f0e4d4,stroke:#c2410c,color:#4a1c08
-
-    class GH,WX,EC,BIZ source
-    class HTTP,JDBC ingest
-    class ODS ods
-    class DWD dwd
-    class DWS dws
-    class ADS ads
-    class TEST,DOCS quality
-    class DAG_FULL,DAG_GH orch
-    class WECOM,DT alert
-    class ACTIONS cicd
+    style GH fill:#d4fcdc,stroke:#2ea043,color:#0f3b1e
+    style WX fill:#d4fcdc,stroke:#2ea043,color:#0f3b1e
+    style EC fill:#d4fcdc,stroke:#2ea043,color:#0f3b1e
+    style BIZ fill:#d4fcdc,stroke:#2ea043,color:#0f3b1e
+    style HTTP fill:#d6e8ff,stroke:#1f6feb,color:#0c2d6b
+    style JDBC fill:#d6e8ff,stroke:#1f6feb,color:#0c2d6b
+    style ODS fill:#e3d4fc,stroke:#8250df,color:#2a1252
+    style DWD fill:#f0d4fc,stroke:#9a28c0,color:#3a0f4a
+    style DWS fill:#d4ecfc,stroke:#2563eb,color:#0f2d52
+    style ADS fill:#fcd4e8,stroke:#d1246e,color:#4a0f28
+    style TEST fill:#fff3cd,stroke:#d4a017,color:#5c4100
+    style DOCS fill:#fff3cd,stroke:#d4a017,color:#5c4100
+    style DAG_FULL fill:#d4f4f4,stroke:#0891b2,color:#083344
+    style DAG_GH fill:#d4f4f4,stroke:#0891b2,color:#083344
+    style WECOM fill:#fdd4d4,stroke:#dc2626,color:#7f1d1d
+    style DT fill:#fdd4d4,stroke:#dc2626,color:#7f1d1d
+    style ACTIONS fill:#f0e4d4,stroke:#c2410c,color:#4a1c08
 ```
 
 ---
