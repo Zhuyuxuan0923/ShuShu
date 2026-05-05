@@ -1,6 +1,6 @@
 # 企业级数据仓库与数据质量平台
 
-[![dbt CI/CD](https://github.com/Zhuyuxuan0923/ShuShu/actions/workflows/dbt_test.yml/badge.svg)](https://github.com/YOUR_USERNAME/YOUR_REPO/actions/workflows/dbt_test.yml)
+[![dbt CI/CD](https://github.com/Zhuyuxuan0923/ShuShu/actions/workflows/dbt_test.yml/badge.svg)](https://github.com/Zhuyuxuan0923/ShuShu/actions/workflows/dbt_test.yml)
 [![dbt core](https://img.shields.io/badge/dbt--core-1.9.4-orange?logo=dbt)](https://github.com/dbt-labs/dbt-core)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169e1?logo=postgresql)](https://www.postgresql.org/)
 
@@ -8,81 +8,62 @@
 
 ---
 
-## CI/CD 流水线
+## 架构全景图
 
-每次 `push` 或 `PR` 到 `main` 分支时自动触发 `.github/workflows/dbt_test.yml`，分三个阶段：
+```mermaid
+flowchart LR
+    subgraph Sources["数据源"]
+        GH["GitHub Events API<br/>(REST JSON)"]
+        WX["Open-Meteo 天气 API<br/>(REST JSON)"]
+        EC["DummyJSON 电商 API<br/>(REST JSON)"]
+        BIZ["业务交易库 source_db<br/>(PostgreSQL JDBC)"]
+    end
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  Job 1: lint (无数据库, ~30s)                                 │
-│  ┌──────────┐   ┌──────────┐   ┌──────────┐                  │
-│  │ dbt deps │ → │dbt parse │ → │dbt compile│                  │
-│  │ 安装依赖  │   │ YAML/引用 │   │ SQL编译   │                  │
-│  └──────────┘   └──────────┘   └──────────┘                  │
-│  发现: 包依赖缺失、ref() 断链、YAML schema 错误、SQL 语法错误    │
-├─────────────────────────────────────────────────────────────┤
-│  Job 2: test (依赖 lint 通过, ~2min)                          │
-│  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌──────────┐        │
-│  │建 Schema │→│灌测试数据 │→│dbt build│→ │docs gen  │        │
-│  │ods/dwd/  │ │6张源表   │ │40+模型  │  │血缘可视化 │        │
-│  │dws/ads   │ │29行种子  │ │50+测试  │  │上传产物   │        │
-│  └─────────┘  └─────────┘  └─────────┘  └──────────┘        │
-│  发现: 类型不匹配、测试断言失败、视图/表创建失败                   │
-├─────────────────────────────────────────────────────────────┤
-│  Job 3: summary (汇总结果)                                     │
-│  输出 lint + test 两阶段状态到 GitHub Step Summary              │
-└─────────────────────────────────────────────────────────────┘
-```
+    subgraph Ingest["摄入层 — Apache SeaTunnel 2.3.12"]
+        HTTP["HTTP Source ×3"]
+        JDBC["JDBC Source ×1"]
+    end
 
-### 各阶段详解
+    subgraph Storage["存储层 — PostgreSQL 16"]
+        ODS["ODS<br/>操作数据层<br/>view · 1:1 镜像"]
+        DWD["DWD<br/>明细数据层<br/>incremental · 清洗去重"]
+        DWS["DWS<br/>服务数据层<br/>incremental · 聚合指标"]
+        ADS["ADS<br/>应用数据层<br/>table · 业务报表"]
+    end
 
-| 阶段 | 工具 | 检查内容 | 发现的问题类型 |
-|------|------|----------|----------------|
-| **dbt deps** | dbt | 下载 `packages.yml` 声明的依赖（dbt-utils 1.3.0） | 版本冲突、包不存在 |
-| **dbt parse** | dbt | 解析所有 `.sql` 和 `.yml`，验证 `ref()` 引用完整、YAML 结构合法 | 模型引用断链、YAML 缩进/字段名错误 |
-| **dbt compile** | dbt | 完整编译所有 SQL 模板（Jinja → 纯 SQL） | SQL 语法错误、宏参数类型不匹配 |
-| **建 Schema** | psql | 在 PostgreSQL 16 服务容器中创建 `ods/dwd/dws/ads` | — |
-| **灌测试数据** | psql | 向 6 张源表灌入总 29 行种子数据，模拟 SeaTunnel 摄入 | — |
-| **dbt seed** | dbt | 加载 CSV 种子数据（event_type_categories） | CSV 格式/编码错误 |
-| **dbt build** | dbt | 按依赖拓扑排序执行全部模型(ODS→DWD→DWS→ADS) + 自动运行 50+ 数据质量测试 | 主键重复、必填字段为空、枚举值越界、值范围超限、新鲜度告警 |
-| **docs generate** | dbt | 基于 `manifest.json` + `catalog.json` 生成可视化血缘 DAG | — |
-| **upload artifact** | actions | 上传 `dbt-docs` (HTML站点) 和 `dbt-logs`，保留 7 天 | — |
+    subgraph Quality["质量层 — dbt 1.9.4"]
+        TEST["dbt test<br/>not_null · unique · accepted_values<br/>freshness · reasonable_range"]
+        DOCS["dbt docs<br/>数据血缘 DAG"]
+    end
 
-### 测试矩阵
+    subgraph Orchestration["调度层 — Airflow 2.11.1"]
+        DAG_FULL["主 DAG<br/>每日 07:00 UTC<br/>6 路并行摄入 → 建模 → 测试 → 监控 → 告警"]
+        DAG_GH["GitHub 单源 DAG<br/>每 30 分钟"]
+    end
 
-```
-层   | 测试类型              | 覆盖表数 | 断言数
-ODS  | unique, not_null      | 6       | 18
-DWD  | unique, not_null, accepted_values | 6 | 22
-DWS  | not_null, unique      | 5       | 15
-ADS  | not_null, unique, accepted_values, reasonable_range | 4 | 18
-─────────────────────────────────────────────────────────
-合计 |                        | 21 模型  | 73
-```
+    subgraph Alert["告警层"]
+        WECOM["企业微信<br/>Markdown 通知"]
+        DT["钉钉<br/>Markdown 通知"]
+    end
 
-### 如何在 PR 中看结果
+    subgraph CICD["CI/CD — GitHub Actions"]
+        ACTIONS["push/PR 自动触发<br/>dbt build + docs<br/>PostgreSQL 服务容器"]
+    end
 
-1. 打开 PR → **Checks** 标签页
-2. 点击 **dbt CI/CD** → 展开 `test` job
-3. 查看每个 step 的控制台输出（ANSI 色彩保留）
-4. 下载 **dbt-docs** artifact → 本地 `open index.html` 查看最新血缘图
-5. 下载 **dbt-logs** artifact → 排查失败原因
+    GH & WX & EC --> HTTP
+    BIZ --> JDBC
+    HTTP & JDBC --> ODS
+    ODS --> DWD --> DWS --> ADS
+    DWD & DWS & ADS --> TEST
+    TEST --> DOCS
+    ODS --> TEST
 
-### 本地等效验证
+    Orchestration --> Ingest
+    Orchestration --> Quality
+    Quality --> Alert
 
-```bash
-# 等同于 CI 的 lint 阶段
-cd dbt
-dbt deps --profiles-dir .
-dbt parse --profiles-dir .
-dbt compile --profiles-dir .
-
-# 等同于 CI 的 test 阶段（需要本地 PostgreSQL 运行中）
-docker compose up -d postgres
-cd dbt
-dbt seed --profiles-dir .
-dbt build --profiles-dir .
-dbt docs generate --profiles-dir .
+    ACTIONS --> Quality
+    ACTIONS -.->|"Build 徽章"| ACTIONS
 ```
 
 ---
@@ -101,19 +82,11 @@ open http://localhost:8080
 # 用户名: admin / 密码: admin
 ```
 
-## 架构
-
-```
-数据源 (GitHub/天气/电商/业务DB) → SeaTunnel 摄入 → PostgreSQL ODS
-  → dbt 建模 (ODS→DWD→DWS→ADS) → dbt 测试 → 企微/钉钉告警
-  → Airflow 调度全流程
-```
-
 ## 技术栈
 
 | 组件 | 版本 | 用途 |
 |------|------|------|
-| Apache SeaTunnel | 2.3.12 | 多源数据摄入（HTTP Source / JDBC Source） |
+| Apache SeaTunnel | 2.3.12 | 多源数据摄入（HTTP Source + JDBC Source） |
 | dbt-core | 1.9.4 | 数据建模、测试、文档、血缘 |
 | Apache Airflow | 2.11.1 | 任务调度（CeleryExecutor） |
 | PostgreSQL | 16 | 数仓存储 + Airflow 元数据库 |
@@ -126,7 +99,7 @@ open http://localhost:8080
 | 层 | Schema | 物化策略 | 职责 |
 |----|--------|----------|------|
 | ODS | ods | view | 源数据 1:1 镜像，类型转换，附加 `_ingested_at` |
-| DWD | dwd | incremental | 去重(`QUALIFY ROW_NUMBER`)、清洗、标准化、维度拆分 |
+| DWD | dwd | incremental | DISTINCT ON 去重、清洗(TRIM/UPPER/LOWER)、标准化、维度拆分 |
 | DWS | dws | incremental | 按日/类目/客户聚合，产出服务层指标 |
 | ADS | ads | table | 窗口函数(环比/排名)、业务规则(告警/分级)、最终报表 |
 
@@ -146,23 +119,82 @@ open http://localhost:8080
 - **非空**: 关键字段 `not_null` 检查（如 `order_date`、`total_amount`、`customer_name`）
 - **枚举值**: `accepted_values` 白名单（如 14 种 `event_type`、4 种 `order_status`）
 - **值范围**: 通用测试 `reasonable_range`（如 `day_over_day_pct` 在 [-100, 1000]）
-- **自定义规则**: 特定业务逻辑断言（如 `ods_github_no_empty_events`、`dws_positive_counts`）
+- **行数波动监控**: 每日对比各层表行数，波动 >30% 自动企微/钉钉告警（数据管道自愈第一步：异常检测）
+
+## 行数波动监控
+
+数据管道自愈的第一步 —— 异常检测。主 DAG 在每次 dbt 运行后自动执行：
+
+1. 遍历 ods / dwd / dws / ads 四个 schema 下所有表
+2. 查询 `COUNT(*)` 得到当前行数
+3. 与昨日快照（`dws.row_count_snapshot`）逐表对比
+4. 波动率 >30% 的表进入告警列表
+5. 通过企微/钉钉 Webhook 推送波动报告
+6. 将今日快照写入 `dws.row_count_snapshot` 供次日对比
+
+> 下一步可扩展为：自动回滚到上一个成功的数据版本（自愈）。
+
+## CI/CD
+
+每次 `push` 或 `PR` 到 `main` 分支时自动触发 `.github/workflows/dbt_test.yml`：
+
+```
+安装 dbt → 建 Schema → 灌测试数据 → dbt seed → dbt build → dbt docs → 上传产物
+```
+
+- **环境**: ubuntu-latest + PostgreSQL 16 (pgvector) 服务容器
+- **测试数据**: 6 张 ODS 表, 29 行种子数据
+- **dbt build**: 运行全部 21 个模型 + 70+ 数据质量测试
+- **产物**: dbt docs HTML 站点 + logs, 保留 7 天
+- **超时**: 10 分钟, cancel-in-progress
+
+## 数据血缘
+
+运行以下命令生成本地血缘图：
+
+```bash
+cd dbt
+dbt docs generate --profiles-dir .
+dbt docs serve --profiles-dir .   # 浏览器打开 http://localhost:8080
+```
+
+在 dbt docs 的 Lineage 视图中可以看到所有模型的依赖关系 DAG。CI 每次运行也会上传 dbt docs artifact 供下载查看。
+
+> 建议: 截图 lineage 图放到 `docs/dbt-lineage.png`，在 README 中展示。
+
+## 告警消息截图
+
+配置 `.env` 中的 Webhook URL 后，触发 DAG 即可收到企微/钉钉消息：
+
+```
+WECOM_WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_REAL_KEY
+DINGTALK_WEBHOOK_URL=https://oapi.dingtalk.com/robot/send?access_token=YOUR_REAL_TOKEN
+```
+
+告警类型：
+- **数据质量告警**: dbt test 失败时推送失败详情表格
+- **行数波动告警**: 表行数波动 >30% 时推送波动报告
+- **通过通知**: 全部测试通过时推送 PASSED 消息
+
+> 建议: 收到真实告警后截图，放在 `docs/` 目录，在这里引用对比图。
 
 ## 目录
 
 ```
-├── .github/workflows/    # CI/CD 流水线定义
-├── airflow/              # Airflow DAG + 告警插件(webhook_notifier)
+├── .github/workflows/    # CI/CD 流水线 (dbt_test.yml)
+├── airflow/
+│   ├── dags/             # DAG (主DAG + 单源DAG)
+│   └── plugins/           # webhook_notifier + row_count_monitor
 ├── dbt/
 │   ├── models/           # 四层模型 (ods/dwd/dws/ads) 共 21 个
-│   ├── macros/           # 自定义宏 (deduplicate/pipeline_metadata/freshness_check)
+│   ├── macros/           # generate_schema_name / pipeline_metadata / deduplicate / freshness_check
 │   ├── tests/            # 通用 + 特定测试
-│   └── seeds/            # 静态种子数据
+│   └── seeds/            # event_type_categories 映射表
 ├── docker/               # Airflow + SeaTunnel Dockerfiles
 ├── docs/                 # 架构/质量框架/运维/接入模板
-├── scripts/              # PostgreSQL 初始化(source_db + data_warehouse)
+├── scripts/              # PostgreSQL + Airflow + source_db 初始化
 ├── seatunnel/
-│   ├── config/           # Zeta 引擎本地模式配置
+│   ├── config/           # Zeta 引擎配置
 │   └── jobs/             # 6 个摄入作业 (3 HTTP + 3 JDBC)
 └── docker-compose.yml    # 7 服务编排
 ```

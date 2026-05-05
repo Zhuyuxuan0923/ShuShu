@@ -6,7 +6,8 @@ Orchestrates the complete data pipeline:
 2. Ingest data from 4 sources (3 external APIs + 1 business DB) via SeaTunnel (parallel)
 3. Run dbt models (ODS -> DWD -> DWS -> ADS)
 4. Run dbt tests
-5. Notify results to WeCom/DingTalk
+5. Monitor row count fluctuation (>30% alert)
+6. Notify results to WeCom/DingTalk
 
 Schedule: daily at 07:00 UTC
 """
@@ -19,6 +20,7 @@ from airflow.operators.empty import EmptyOperator
 from airflow.utils.task_group import TaskGroup
 
 from webhook_notifier import notify_data_quality_results
+from row_count_monitor import monitor_row_counts
 
 default_args = {
     "owner": "data_team",
@@ -155,6 +157,12 @@ with DAG(
 
         dbt_seed >> dbt_run >> dbt_test >> dbt_docs
 
+    # --- Row Count Monitoring ---
+    monitor_row_count = PythonOperator(
+        task_id="monitor_row_count",
+        python_callable=monitor_row_counts,
+    )
+
     # --- Alerting ---
     notify_quality = PythonOperator(
         task_id="notify_data_quality",
@@ -164,4 +172,4 @@ with DAG(
 
     # --- DAG Structure ---
     start >> check_source_freshness >> ingest_all >> transform
-    transform >> notify_quality >> end
+    transform >> monitor_row_count >> notify_quality >> end
