@@ -41,11 +41,12 @@ CI/CD 状态:
   12. packages.yml 删除: dbt-utils 无引用，避免 dbt deps 强制依赖
   13. 行数波动监控: 新增 row_count_monitor 插件，四层 COUNT 对比昨日快照，>30% 企微/钉钉告警
   14. Mermaid 架构图: README 新增全景流程图，GitHub 直接渲染
-  15. 告警截图引导: README 中已添加，配置真实 webhook URL 即可截图
+  15. 告警截图: 企微 Webhook 已配置, 真实告警消息截图 (电脑端+手机端) 已放入 docs/screenshots/
 
 新增功能:
   - 行数波动监控: DAG 新增 monitor_row_count 任务（数据管道自愈第一步：异常检测）
   - Mermaid 架构全景图: 数据源→摄入→存储→建模→质量→调度→告警→CI/CD
+  - 企微告警已配置: WECOM_WEBHOOK_URL 已填入真实 key, 告警消息正常推送
 
 已知限制:
   - Docker Hub 镜像拉取需配置 registry mirror（已在 Docker Desktop Settings 中配置）

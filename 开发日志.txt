@@ -193,6 +193,16 @@
      - README.md 新增告警消息截图说明
      - 配置真实 webhook URL 即可收到企微/钉钉消息并截图
 
+  7. 真实告警截图
+     - 配置企业微信 Webhook (d55c7bd9-fa82-471e-b09d-1765f5e89eb6)
+     - 制造强制失败测试, 触发 dbt test 报错, 企微收到 Markdown 告警
+     - 电脑端+手机端截图已放入 docs/screenshots/
+     - 截图后删除临时测试文件, 项目恢复正常
+
+  8. Mermaid 架构图调优
+     - classDef 语法 GitHub 渲染空白 → 改用 style 逐节点配色
+     - & 多源连线改为独立连线, 避免解析器兼容问题
+
 [Bug修复]
   1. dbt-postgres 版本: 1.9.4 不存在于 PyPI → 改用 ~=1.9.0 (解析为 1.9.1)
   2. Schema 前缀问题: 默认宏生成 public_dws → 覆盖 generate_schema_name
