@@ -12,41 +12,41 @@
 
 ```mermaid
 flowchart LR
-    subgraph Sources["数据源"]
+    subgraph Sources[" 数据源 "]
         GH["GitHub Events API<br/>(REST JSON)"]
         WX["Open-Meteo 天气 API<br/>(REST JSON)"]
         EC["DummyJSON 电商 API<br/>(REST JSON)"]
         BIZ["业务交易库 source_db<br/>(PostgreSQL JDBC)"]
     end
 
-    subgraph Ingest["摄入层 — Apache SeaTunnel 2.3.12"]
+    subgraph Ingest[" 摄入层 — Apache SeaTunnel 2.3.12 "]
         HTTP["HTTP Source ×3"]
         JDBC["JDBC Source ×1"]
     end
 
-    subgraph Storage["存储层 — PostgreSQL 16"]
+    subgraph Storage[" 存储层 — PostgreSQL 16 "]
         ODS["ODS<br/>操作数据层<br/>view · 1:1 镜像"]
         DWD["DWD<br/>明细数据层<br/>incremental · 清洗去重"]
         DWS["DWS<br/>服务数据层<br/>incremental · 聚合指标"]
         ADS["ADS<br/>应用数据层<br/>table · 业务报表"]
     end
 
-    subgraph Quality["质量层 — dbt 1.9.4"]
+    subgraph Quality[" 质量层 — dbt 1.9.4 "]
         TEST["dbt test<br/>not_null · unique · accepted_values<br/>freshness · reasonable_range"]
         DOCS["dbt docs<br/>数据血缘 DAG"]
     end
 
-    subgraph Orchestration["调度层 — Airflow 2.11.1"]
+    subgraph Orchestration[" 调度层 — Airflow 2.11.1 "]
         DAG_FULL["主 DAG<br/>每日 07:00 UTC<br/>6 路并行摄入 → 建模 → 测试 → 监控 → 告警"]
         DAG_GH["GitHub 单源 DAG<br/>每 30 分钟"]
     end
 
-    subgraph Alert["告警层"]
+    subgraph Alert[" 告警层 "]
         WECOM["企业微信<br/>Markdown 通知"]
         DT["钉钉<br/>Markdown 通知"]
     end
 
-    subgraph CICD["CI/CD — GitHub Actions"]
+    subgraph CICD[" CI/CD — GitHub Actions "]
         ACTIONS["push/PR 自动触发<br/>dbt build + docs<br/>PostgreSQL 服务容器"]
     end
 
@@ -64,6 +64,29 @@ flowchart LR
 
     ACTIONS --> Quality
     ACTIONS -.->|"Build 徽章"| ACTIONS
+
+    %% --- color styles ---
+    classDef source fill:#d4fcdc,stroke:#2ea043,color:#0f3b1e
+    classDef ingest fill:#d6e8ff,stroke:#1f6feb,color:#0c2d6b
+    classDef ods fill:#e3d4fc,stroke:#8250df,color:#2a1252
+    classDef dwd fill:#f0d4fc,stroke:#9a28c0,color:#3a0f4a
+    classDef dws fill:#d4ecfc,stroke:#2563eb,color:#0f2d52
+    classDef ads fill:#fcd4e8,stroke:#d1246e,color:#4a0f28
+    classDef quality fill:#fff3cd,stroke:#d4a017,color:#5c4100
+    classDef orch fill:#d4f4f4,stroke:#0891b2,color:#083344
+    classDef alert fill:#fdd4d4,stroke:#dc2626,color:#7f1d1d
+    classDef cicd fill:#f0e4d4,stroke:#c2410c,color:#4a1c08
+
+    class GH,WX,EC,BIZ source
+    class HTTP,JDBC ingest
+    class ODS ods
+    class DWD dwd
+    class DWS dws
+    class ADS ads
+    class TEST,DOCS quality
+    class DAG_FULL,DAG_GH orch
+    class WECOM,DT alert
+    class ACTIONS cicd
 ```
 
 ---
