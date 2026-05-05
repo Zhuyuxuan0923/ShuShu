@@ -201,7 +201,14 @@ DINGTALK_WEBHOOK_URL=https://oapi.dingtalk.com/robot/send?access_token=YOUR_REAL
 - **行数波动告警**: 表行数波动 >30% 时推送波动报告
 - **通过通知**: 全部测试通过时推送 PASSED 消息
 
-> 建议: 收到真实告警后截图，放在 `docs/` 目录，在这里引用对比图。
+<p align="center">
+  <img src="docs/screenshots/电脑端.png" alt="企业微信告警 - 电脑端" width="500">
+  <br/><em>数据质量告警 - 电脑端</em>
+</p>
+<p align="center">
+  <img src="docs/screenshots/手机端.jpg" alt="企业微信告警 - 手机端" width="280">
+  <br/><em>数据质量告警 - 手机端</em>
+</p>
 
 ## 目录
 
