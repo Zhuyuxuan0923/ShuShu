@@ -1,0 +1,68 @@
+version: 2
+
+models:
+  - name: ods_github_events
+    description: "ODS view for GitHub public events -- type-cast passthrough from raw table"
+    columns:
+      - name: event_id
+        tests: [not_null, unique]
+      - name: event_type
+        tests: [not_null]
+      - name: repo_name
+        tests: [not_null]
+      - name: _ingested_at
+        tests: [not_null]
+
+  - name: ods_weather_forecast
+    description: "ODS view for Open-Meteo hourly weather forecast"
+    columns:
+      - name: forecast_time
+        tests: [not_null]
+      - name: temperature_2m
+        tests: [not_null]
+      - name: _ingested_at
+        tests: [not_null]
+
+  - name: ods_ecommerce_products
+    description: "ODS view for DummyJSON e-commerce product catalog"
+    columns:
+      - name: product_id
+        tests: [not_null, unique]
+      - name: product_title
+        tests: [not_null]
+      - name: price
+        tests: [not_null]
+      - name: _ingested_at
+        tests: [not_null]
+
+  - name: ods_business_customers
+    description: "ODS view for customer master data from source_db"
+    columns:
+      - name: customer_id
+        tests: [not_null, unique]
+      - name: customer_name
+        tests: [not_null]
+      - name: _ingested_at
+        tests: [not_null]
+
+  - name: ods_business_orders
+    description: "ODS view for order transactions from source_db"
+    columns:
+      - name: order_id
+        tests: [not_null, unique]
+      - name: order_date
+        tests: [not_null]
+      - name: total_amount
+        tests: [not_null]
+      - name: _ingested_at
+        tests: [not_null]
+
+  - name: ods_business_order_items
+    description: "ODS view for order line items from source_db"
+    columns:
+      - name: item_id
+        tests: [not_null, unique]
+      - name: order_id
+        tests: [not_null]
+      - name: _ingested_at
+        tests: [not_null]

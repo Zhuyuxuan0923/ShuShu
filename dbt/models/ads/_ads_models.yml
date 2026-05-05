@@ -1,0 +1,59 @@
+version: 2
+
+models:
+  - name: ads_github_trending
+    description: "GitHub trending analysis: daily ranking with day-over-day and week-over-week changes"
+    columns:
+      - name: event_date
+        tests: [not_null]
+      - name: event_type
+        tests: [not_null]
+      - name: event_count
+        tests: [not_null]
+      - name: daily_rank
+        tests: [not_null]
+      - name: day_over_day_pct
+        tests:
+          - reasonable_range:
+              min_value: -100
+              max_value: 1000
+
+  - name: ads_weather_alert
+    description: "Weather alerts for extreme conditions: heat (>38C) and thunderstorms"
+    columns:
+      - name: forecast_time
+        tests: [not_null]
+      - name: alert_type
+        tests: [not_null]
+      - name: severity
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['warning', 'critical']
+
+  - name: ads_ecommerce_kpi
+    description: "E-commerce top categories ranked by revenue potential (inventory value)"
+    columns:
+      - name: category
+        tests: [not_null, unique]
+      - name: total_inventory_value
+        tests: [not_null]
+      - name: revenue_rank
+        tests: [not_null]
+
+  - name: ads_business_kpi
+    description: "Business KPI report: top 10 customers by revenue, payment distribution, daily trends"
+    columns:
+      - name: customer_id
+        tests: [not_null, unique]
+      - name: customer_name
+        tests: [not_null]
+      - name: total_revenue
+        tests: [not_null]
+      - name: revenue_rank
+        tests: [not_null]
+      - name: customer_tier
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['vip', 'premium', 'standard', 'basic']

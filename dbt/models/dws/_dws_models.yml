@@ -1,0 +1,66 @@
+version: 2
+
+models:
+  - name: dws_github_daily_activity
+    description: "Daily GitHub activity aggregated by event type"
+    columns:
+      - name: event_date
+        tests: [not_null]
+      - name: event_type
+        tests: [not_null]
+      - name: event_count
+        tests: [not_null]
+      - name: unique_actors
+        tests: [not_null]
+      - name: unique_repos
+        tests: [not_null]
+
+  - name: dws_weather_daily_summary
+    description: "Daily weather summary with min/max/avg temperature and total precipitation"
+    columns:
+      - name: forecast_date
+        tests: [not_null, unique]
+      - name: avg_temperature
+        tests: [not_null]
+      - name: record_count
+        tests: [not_null]
+
+  - name: dws_ecommerce_category_daily
+    description: "Daily e-commerce metrics aggregated by product category"
+    columns:
+      - name: category
+        tests: [not_null]
+      - name: product_count
+        tests: [not_null]
+      - name: avg_price
+        tests: [not_null]
+      - name: avg_rating
+        tests: [not_null]
+
+  - name: dws_order_daily_summary
+    description: "Daily order summary aggregated by date and order status"
+    columns:
+      - name: order_date_key
+        tests: [not_null]
+      - name: order_status
+        tests: [not_null]
+      - name: order_count
+        tests: [not_null]
+      - name: total_revenue
+        tests: [not_null]
+      - name: avg_order_value
+        tests: [not_null]
+
+  - name: dws_customer_order_summary
+    description: "Per-customer order summary with RFM-style metrics and customer tier"
+    columns:
+      - name: customer_id
+        tests: [not_null, unique]
+      - name: customer_name
+        tests: [not_null]
+      - name: total_orders
+        tests: [not_null]
+      - name: total_revenue
+        tests: [not_null]
+      - name: customer_tier
+        tests: [not_null]

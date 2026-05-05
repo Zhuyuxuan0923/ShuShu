@@ -1,0 +1,149 @@
+name: dbt Test
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  dbt-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: dw_admin
+          POSTGRES_PASSWORD: dw_secure_pwd_2025
+          POSTGRES_DB: data_warehouse
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install dbt-core==1.9.4 dbt-postgres==1.9.4
+
+      - name: Create schemas
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+          PGPASSWORD=dw_secure_pwd_2025 psql -h localhost -U dw_admin -d data_warehouse <<'SQL'
+            CREATE SCHEMA IF NOT EXISTS ods;
+            CREATE SCHEMA IF NOT EXISTS dwd;
+            CREATE SCHEMA IF NOT EXISTS dws;
+            CREATE SCHEMA IF NOT EXISTS ads;
+          SQL
+
+      - name: Seed CI test data
+        run: |
+          PGPASSWORD=dw_secure_pwd_2025 psql -h localhost -U dw_admin -d data_warehouse <<'SQL'
+            -- ============================================================
+            -- Simulate SeaTunnel ingestion: create source tables + insert minimal test data
+            -- ============================================================
+
+            -- github_events (5 rows, cover 5 distinct event types from accepted_values)
+            DROP TABLE IF EXISTS ods.github_events;
+            CREATE TABLE ods.github_events (
+              id TEXT, type TEXT, actor_login TEXT, actor_id BIGINT,
+              repo_name TEXT, repo_id BIGINT, created_at TEXT,
+              is_public BOOLEAN, source_system TEXT, _ingested_at TIMESTAMPTZ
+            );
+            INSERT INTO ods.github_events VALUES
+              ('1', 'PushEvent',         'dev1',   1001, 'apache/seatunnel',   2001, '2025-05-01T10:00:00Z', true,  'github', NOW()),
+              ('2', 'WatchEvent',        'dev2',   1002, 'dbt-labs/dbt-core',  2002, '2025-05-01T11:00:00Z', true,  'github', NOW()),
+              ('3', 'IssuesEvent',       'dev3',   1003, 'apache/airflow',     2003, '2025-05-01T12:00:00Z', true,  'github', NOW()),
+              ('4', 'PullRequestEvent',  'dev4',   1004, 'pgvector/pgvector',  2004, '2025-05-01T13:00:00Z', true,  'github', NOW()),
+              ('5', 'ForkEvent',         'dev5',   1005, 'redis/redis',        2005, '2025-05-01T14:00:00Z', true,  'github', NOW());
+
+            -- weather_forecast (3 rows, weather codes map to clear/rain/thunderstorm categories)
+            DROP TABLE IF EXISTS ods.weather_forecast;
+            CREATE TABLE ods.weather_forecast (
+              time TEXT, temperature_2m DOUBLE PRECISION, humidity INTEGER,
+              precipitation DOUBLE PRECISION, weather_code INTEGER,
+              source_system TEXT, _ingested_at TIMESTAMPTZ
+            );
+            INSERT INTO ods.weather_forecast VALUES
+              ('2025-05-01T09:00', 22.5, 45, 0.0,  0,  'open_meteo', NOW()),
+              ('2025-05-01T12:00', 30.1, 55, 2.1,  30, 'open_meteo', NOW()),
+              ('2025-05-01T15:00', 35.8, 70, 12.5, 80, 'open_meteo', NOW());
+
+            -- ecommerce_products (3 rows, ratings map to platinum/gold/silver tiers)
+            DROP TABLE IF EXISTS ods.ecommerce_products;
+            CREATE TABLE ods.ecommerce_products (
+              id INTEGER, title TEXT, description TEXT,
+              price DOUBLE PRECISION, discount_percentage DOUBLE PRECISION,
+              rating DOUBLE PRECISION, stock INTEGER, brand TEXT,
+              category TEXT, thumbnail TEXT,
+              source_system TEXT, _ingested_at TIMESTAMPTZ
+            );
+            INSERT INTO ods.ecommerce_products VALUES
+              (1, 'iPhone 15 Pro',       'Apple smartphone',    8999.00, 5.0,  4.8, 100, 'Apple',   'Electronics', 'http://img/1.jpg', 'dummyjson', NOW()),
+              (2, 'MacBook Air M3',      'Apple laptop',        7999.00, 0.0,  4.2,  50, 'Apple',   'Laptops',     'http://img/2.jpg', 'dummyjson', NOW()),
+              (3, 'Cheap Earbuds',       'Budget audio',          99.00, 10.0, 3.5, 500, 'NoName',  'Audio',       'http://img/3.jpg', 'dummyjson', NOW());
+
+            -- business_customers (2 rows, cover both types)
+            DROP TABLE IF EXISTS ods.business_customers;
+            CREATE TABLE ods.business_customers (
+              customer_id INTEGER, customer_name TEXT, email TEXT,
+              phone TEXT, city TEXT, register_date DATE,
+              customer_type TEXT, source_system TEXT, _ingested_at TIMESTAMPTZ
+            );
+            INSERT INTO ods.business_customers VALUES
+              (1, '深圳创新科技', 'contact@szcx.com', '0755-26881234', '深圳', '2024-03-15', 'corporate',  'source_db', NOW()),
+              (2, '张伟',         'zhangwei@email.cn', '13800138001', '北京', '2024-01-05', 'individual', 'source_db', NOW());
+
+            -- business_orders (4 rows, 2 per customer, cover 4 statuses + 3 payment channels)
+            DROP TABLE IF EXISTS ods.business_orders;
+            CREATE TABLE ods.business_orders (
+              order_id INTEGER, customer_id INTEGER, order_date TIMESTAMP,
+              order_status TEXT, payment_method TEXT,
+              total_amount DECIMAL(12,2), currency TEXT,
+              source_system TEXT, _ingested_at TIMESTAMPTZ
+            );
+            INSERT INTO ods.business_orders VALUES
+              (1, 1, '2025-05-01 09:00:00', 'completed',  'credit_card',   15800.00, 'CNY', 'source_db', NOW()),
+              (2, 1, '2025-05-02 14:00:00', 'processing',  'alipay',         8750.00, 'CNY', 'source_db', NOW()),
+              (3, 2, '2025-05-01 18:00:00', 'cancelled',   'wechat_pay',      560.00, 'CNY', 'source_db', NOW()),
+              (4, 2, '2025-05-03 10:00:00', 'refunded',    'bank_transfer',  1200.00, 'CNY', 'source_db', NOW());
+
+            -- business_order_items (5 rows, linked to orders, qty>0, positive prices)
+            DROP TABLE IF EXISTS ods.business_order_items;
+            CREATE TABLE ods.business_order_items (
+              item_id INTEGER, order_id INTEGER, product_name TEXT,
+              quantity INTEGER, unit_price DECIMAL(10,2), discount_pct DECIMAL(5,2),
+              source_system TEXT, _ingested_at TIMESTAMPTZ
+            );
+            INSERT INTO ods.business_order_items VALUES
+              (1, 1, 'ThinkPad X1 Carbon',  2, 6500.00, 0.0,   'source_db', NOW()),
+              (2, 1, 'Logitech MX Master',  3,  599.00, 5.0,   'source_db', NOW()),
+              (3, 2, 'WD Black SSD 2TB',    5, 1299.00, 0.0,   'source_db', NOW()),
+              (4, 3, '手机壳 TPU',           2,   50.00, 0.0,   'source_db', NOW()),
+              (5, 4, '智能插座 WiFi版',      1,  169.00, 10.0,  'source_db', NOW());
+
+            CREATE INDEX IF NOT EXISTS idx_github_events_id ON ods.github_events(id);
+            CREATE INDEX IF NOT EXISTS idx_business_customers_id ON ods.business_customers(customer_id);
+            CREATE INDEX IF NOT EXISTS idx_business_orders_id ON ods.business_orders(order_id);
+            CREATE INDEX IF NOT EXISTS idx_business_order_items_id ON ods.business_order_items(item_id);
+          SQL
+
+      - name: dbt deps
+        run: cd dbt && dbt deps --profiles-dir .
+
+      - name: dbt seed
+        run: cd dbt && dbt seed --profiles-dir .
+
+      - name: dbt build
+        run: cd dbt && dbt build --profiles-dir .
