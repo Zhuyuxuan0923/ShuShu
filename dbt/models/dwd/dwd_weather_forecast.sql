@@ -38,8 +38,8 @@ cleaned AS (
     FROM source
     WHERE forecast_time IS NOT NULL
 )
-SELECT
+SELECT DISTINCT ON (forecast_time)
     *,
     CURRENT_TIMESTAMP AS _dwd_processed_at
 FROM cleaned
-{{ deduplicate('forecast_time') }}
+ORDER BY forecast_time, _ingested_at DESC

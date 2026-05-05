@@ -26,8 +26,8 @@ cleaned AS (
       AND customer_name IS NOT NULL
       AND customer_name != ''
 )
-SELECT
+SELECT DISTINCT ON (customer_id)
     *,
     CURRENT_TIMESTAMP AS _dwd_processed_at
 FROM cleaned
-{{ deduplicate('customer_id') }}
+ORDER BY customer_id, _ingested_at DESC

@@ -37,8 +37,8 @@ cleaned AS (
       AND order_date IS NOT NULL
       AND total_amount >= 0
 )
-SELECT
+SELECT DISTINCT ON (order_id)
     *,
     CURRENT_TIMESTAMP AS _dwd_processed_at
 FROM cleaned
-{{ deduplicate('order_id') }}
+ORDER BY order_id, _ingested_at DESC

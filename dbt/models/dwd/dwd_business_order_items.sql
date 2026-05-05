@@ -29,8 +29,8 @@ cleaned AS (
       AND quantity > 0
       AND unit_price >= 0
 )
-SELECT
+SELECT DISTINCT ON (item_id)
     *,
     CURRENT_TIMESTAMP AS _dwd_processed_at
 FROM cleaned
-{{ deduplicate('item_id') }}
+ORDER BY item_id, _ingested_at DESC

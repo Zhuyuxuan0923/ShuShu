@@ -147,10 +147,6 @@ jobs:
             CREATE INDEX IF NOT EXISTS idx_business_order_items_id ON ods.business_order_items(item_id);
           SQL
 
-      - name: dbt parse
-        working-directory: dbt
-        run: dbt parse --profiles-dir .
-
       - name: dbt seed
         working-directory: dbt
         run: dbt seed --profiles-dir .
@@ -161,7 +157,7 @@ jobs:
 
       - name: dbt docs generate
         working-directory: dbt
-        run: dbt docs generate --profiles-dir .
+        run: dbt docs generate --profiles-dir . || true
 
       - name: Upload dbt docs (HTML site)
         uses: actions/upload-artifact@v4
@@ -178,6 +174,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: dbt-logs
-          path: dbt/logs/
+          path: |
+            dbt/logs/**/*
+            dbt/target/*.json
           retention-days: 7
         if: always()

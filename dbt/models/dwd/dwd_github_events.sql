@@ -31,8 +31,8 @@ cleaned AS (
       AND repo_name IS NOT NULL
       AND repo_name LIKE '%/%'
 )
-SELECT
+SELECT DISTINCT ON (event_id)
     *,
     CURRENT_TIMESTAMP AS _dwd_processed_at
 FROM cleaned
-{{ deduplicate('event_id') }}
+ORDER BY event_id, _ingested_at DESC

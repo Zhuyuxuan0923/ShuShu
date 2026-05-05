@@ -35,8 +35,8 @@ cleaned AS (
       AND product_title IS NOT NULL
       AND price IS NOT NULL
 )
-SELECT
+SELECT DISTINCT ON (product_id)
     *,
     CURRENT_TIMESTAMP AS _dwd_processed_at
 FROM cleaned
-{{ deduplicate('product_id') }}
+ORDER BY product_id, _ingested_at DESC
