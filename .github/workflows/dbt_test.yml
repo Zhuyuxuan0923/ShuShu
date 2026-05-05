@@ -1,14 +1,63 @@
-name: dbt Test
+name: dbt CI/CD
 
 on:
   push:
     branches: [main, master]
+    paths:
+      - "dbt/**"
+      - ".github/workflows/dbt_test.yml"
   pull_request:
     branches: [main, master]
+    paths:
+      - "dbt/**"
+      - ".github/workflows/dbt_test.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  dbt-test:
+  # ==========================================================================
+  # Job 1: Lint — validate project structure, YAML schema, SQL compilation
+  # No database needed. Fast (~30s). Catches 80% of errors.
+  # ==========================================================================
+  lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dbt
+        run: |
+          python -m pip install --upgrade pip
+          pip install dbt-core==1.9.4 dbt-postgres==1.9.4
+
+      - name: dbt deps
+        working-directory: dbt
+        run: dbt deps --profiles-dir .
+
+      - name: dbt parse
+        working-directory: dbt
+        run: dbt parse --profiles-dir .
+
+      - name: dbt compile
+        working-directory: dbt
+        run: dbt compile --profiles-dir .
+
+  # ==========================================================================
+  # Job 2: Test — full pipeline ODS→DWD→DWS→ADS + data quality tests
+  # Spins up PostgreSQL service container, seeds test data, runs dbt build.
+  # ==========================================================================
+  test:
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     services:
       postgres:
@@ -31,15 +80,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: "pip"
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install dbt-core==1.9.4 dbt-postgres==1.9.4
-
-      - name: Create schemas
-        run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+
+      - name: Init database schemas
+        run: |
           PGPASSWORD=dw_secure_pwd_2025 psql -h localhost -U dw_admin -d data_warehouse <<'SQL'
             CREATE SCHEMA IF NOT EXISTS ods;
             CREATE SCHEMA IF NOT EXISTS dwd;
@@ -47,14 +97,13 @@ jobs:
             CREATE SCHEMA IF NOT EXISTS ads;
           SQL
 
-      - name: Seed CI test data
+      - name: Load CI test data (simulate SeaTunnel ingestion)
         run: |
           PGPASSWORD=dw_secure_pwd_2025 psql -h localhost -U dw_admin -d data_warehouse <<'SQL'
-            -- ============================================================
-            -- Simulate SeaTunnel ingestion: create source tables + insert minimal test data
-            -- ============================================================
 
-            -- github_events (5 rows, cover 5 distinct event types from accepted_values)
+            -- ================================================================
+            -- github_events: 5 rows covering distinct event types
+            -- ================================================================
             DROP TABLE IF EXISTS ods.github_events;
             CREATE TABLE ods.github_events (
               id TEXT, type TEXT, actor_login TEXT, actor_id BIGINT,
@@ -62,13 +111,15 @@ jobs:
               is_public BOOLEAN, source_system TEXT, _ingested_at TIMESTAMPTZ
             );
             INSERT INTO ods.github_events VALUES
-              ('1', 'PushEvent',         'dev1',   1001, 'apache/seatunnel',   2001, '2025-05-01T10:00:00Z', true,  'github', NOW()),
-              ('2', 'WatchEvent',        'dev2',   1002, 'dbt-labs/dbt-core',  2002, '2025-05-01T11:00:00Z', true,  'github', NOW()),
-              ('3', 'IssuesEvent',       'dev3',   1003, 'apache/airflow',     2003, '2025-05-01T12:00:00Z', true,  'github', NOW()),
-              ('4', 'PullRequestEvent',  'dev4',   1004, 'pgvector/pgvector',  2004, '2025-05-01T13:00:00Z', true,  'github', NOW()),
-              ('5', 'ForkEvent',         'dev5',   1005, 'redis/redis',        2005, '2025-05-01T14:00:00Z', true,  'github', NOW());
+              ('1', 'PushEvent',         'dev1', 1001, 'apache/seatunnel',   2001, '2025-05-01T10:00:00Z', true,  'github', NOW()),
+              ('2', 'WatchEvent',        'dev2', 1002, 'dbt-labs/dbt-core',  2002, '2025-05-01T11:00:00Z', true,  'github', NOW()),
+              ('3', 'IssuesEvent',       'dev3', 1003, 'apache/airflow',     2003, '2025-05-01T12:00:00Z', true,  'github', NOW()),
+              ('4', 'PullRequestEvent',  'dev4', 1004, 'pgvector/pgvector',  2004, '2025-05-01T13:00:00Z', true,  'github', NOW()),
+              ('5', 'ForkEvent',         'dev5', 1005, 'redis/redis',        2005, '2025-05-01T14:00:00Z', true,  'github', NOW());
 
-            -- weather_forecast (3 rows, weather codes map to clear/rain/thunderstorm categories)
+            -- ================================================================
+            -- weather_forecast: 3 rows mapping to clear / rain / thunderstorm
+            -- ================================================================
             DROP TABLE IF EXISTS ods.weather_forecast;
             CREATE TABLE ods.weather_forecast (
               time TEXT, temperature_2m DOUBLE PRECISION, humidity INTEGER,
@@ -76,11 +127,13 @@ jobs:
               source_system TEXT, _ingested_at TIMESTAMPTZ
             );
             INSERT INTO ods.weather_forecast VALUES
-              ('2025-05-01T09:00', 22.5, 45, 0.0,  0,  'open_meteo', NOW()),
+              ('2025-05-01T09:00', 22.5, 45, 0.0,   0, 'open_meteo', NOW()),
               ('2025-05-01T12:00', 30.1, 55, 2.1,  30, 'open_meteo', NOW()),
               ('2025-05-01T15:00', 35.8, 70, 12.5, 80, 'open_meteo', NOW());
 
-            -- ecommerce_products (3 rows, ratings map to platinum/gold/silver tiers)
+            -- ================================================================
+            -- ecommerce_products: 3 rows mapping to platinum / gold / silver
+            -- ================================================================
             DROP TABLE IF EXISTS ods.ecommerce_products;
             CREATE TABLE ods.ecommerce_products (
               id INTEGER, title TEXT, description TEXT,
@@ -90,11 +143,13 @@ jobs:
               source_system TEXT, _ingested_at TIMESTAMPTZ
             );
             INSERT INTO ods.ecommerce_products VALUES
-              (1, 'iPhone 15 Pro',       'Apple smartphone',    8999.00, 5.0,  4.8, 100, 'Apple',   'Electronics', 'http://img/1.jpg', 'dummyjson', NOW()),
-              (2, 'MacBook Air M3',      'Apple laptop',        7999.00, 0.0,  4.2,  50, 'Apple',   'Laptops',     'http://img/2.jpg', 'dummyjson', NOW()),
-              (3, 'Cheap Earbuds',       'Budget audio',          99.00, 10.0, 3.5, 500, 'NoName',  'Audio',       'http://img/3.jpg', 'dummyjson', NOW());
+              (1, 'iPhone 15 Pro',  'Apple smartphone', 8999.00, 5.0,  4.8, 100, 'Apple',  'Electronics', 'http://img/1.jpg', 'dummyjson', NOW()),
+              (2, 'MacBook Air M3', 'Apple laptop',     7999.00, 0.0,  4.2,  50, 'Apple',  'Laptops',     'http://img/2.jpg', 'dummyjson', NOW()),
+              (3, 'Cheap Earbuds',  'Budget audio',       99.00, 10.0, 3.5, 500, 'NoName', 'Audio',       'http://img/3.jpg', 'dummyjson', NOW());
 
-            -- business_customers (2 rows, cover both types)
+            -- ================================================================
+            -- business_customers: 2 rows, both customer_type values
+            -- ================================================================
             DROP TABLE IF EXISTS ods.business_customers;
             CREATE TABLE ods.business_customers (
               customer_id INTEGER, customer_name TEXT, email TEXT,
@@ -102,10 +157,12 @@ jobs:
               customer_type TEXT, source_system TEXT, _ingested_at TIMESTAMPTZ
             );
             INSERT INTO ods.business_customers VALUES
-              (1, '深圳创新科技', 'contact@szcx.com', '0755-26881234', '深圳', '2024-03-15', 'corporate',  'source_db', NOW()),
-              (2, '张伟',         'zhangwei@email.cn', '13800138001', '北京', '2024-01-05', 'individual', 'source_db', NOW());
+              (1, '深圳创新科技', 'contact@szcx.com',  '0755-26881234', '深圳', '2024-03-15', 'corporate',  'source_db', NOW()),
+              (2, '张伟',         'zhangwei@email.cn', '13800138001',   '北京', '2024-01-05', 'individual', 'source_db', NOW());
 
-            -- business_orders (4 rows, 2 per customer, cover 4 statuses + 3 payment channels)
+            -- ================================================================
+            -- business_orders: 4 rows covering all 4 statuses + all payment channels
+            -- ================================================================
             DROP TABLE IF EXISTS ods.business_orders;
             CREATE TABLE ods.business_orders (
               order_id INTEGER, customer_id INTEGER, order_date TIMESTAMP,
@@ -119,7 +176,9 @@ jobs:
               (3, 2, '2025-05-01 18:00:00', 'cancelled',   'wechat_pay',      560.00, 'CNY', 'source_db', NOW()),
               (4, 2, '2025-05-03 10:00:00', 'refunded',    'bank_transfer',  1200.00, 'CNY', 'source_db', NOW());
 
-            -- business_order_items (5 rows, linked to orders, qty>0, positive prices)
+            -- ================================================================
+            -- business_order_items: 5 rows linked to the orders above
+            -- ================================================================
             DROP TABLE IF EXISTS ods.business_order_items;
             CREATE TABLE ods.business_order_items (
               item_id INTEGER, order_id INTEGER, product_name TEXT,
@@ -130,8 +189,8 @@ jobs:
               (1, 1, 'ThinkPad X1 Carbon',  2, 6500.00, 0.0,   'source_db', NOW()),
               (2, 1, 'Logitech MX Master',  3,  599.00, 5.0,   'source_db', NOW()),
               (3, 2, 'WD Black SSD 2TB',    5, 1299.00, 0.0,   'source_db', NOW()),
-              (4, 3, '手机壳 TPU',           2,   50.00, 0.0,   'source_db', NOW()),
-              (5, 4, '智能插座 WiFi版',      1,  169.00, 10.0,  'source_db', NOW());
+              (4, 3, '手机壳 TPU',          2,   50.00, 0.0,   'source_db', NOW()),
+              (5, 4, '智能插座 WiFi版',     1,  169.00, 10.0,  'source_db', NOW());
 
             CREATE INDEX IF NOT EXISTS idx_github_events_id ON ods.github_events(id);
             CREATE INDEX IF NOT EXISTS idx_business_customers_id ON ods.business_customers(customer_id);
@@ -140,10 +199,61 @@ jobs:
           SQL
 
       - name: dbt deps
-        run: cd dbt && dbt deps --profiles-dir .
+        working-directory: dbt
+        run: dbt deps --profiles-dir .
 
       - name: dbt seed
-        run: cd dbt && dbt seed --profiles-dir .
+        working-directory: dbt
+        run: dbt seed --profiles-dir .
 
-      - name: dbt build
-        run: cd dbt && dbt build --profiles-dir .
+      - name: dbt build (run + test)
+        working-directory: dbt
+        run: dbt build --profiles-dir .
+
+      - name: dbt docs generate
+        working-directory: dbt
+        run: dbt docs generate --profiles-dir .
+
+      - name: Upload dbt docs (HTML site)
+        uses: actions/upload-artifact@v4
+        with:
+          name: dbt-docs
+          path: |
+            dbt/target/index.html
+            dbt/target/manifest.json
+            dbt/target/catalog.json
+            dbt/target/run_results.json
+          retention-days: 7
+
+      - name: Upload dbt logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: dbt-logs
+          path: dbt/logs/
+          retention-days: 7
+        if: always()
+
+  # ==========================================================================
+  # Job 3: Summary — aggregate results, set final status
+  # ==========================================================================
+  summary:
+    needs: [lint, test]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Final status
+        run: |
+          echo "| Stage | Status |"                          >> $GITHUB_STEP_SUMMARY
+          echo "| :---- | :----- |"                           >> $GITHUB_STEP_SUMMARY
+          echo "| lint  | ${{ needs.lint.result    }}"        >> $GITHUB_STEP_SUMMARY
+          echo "| test  | ${{ needs.test.result    }}"        >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.lint.result }}" = "success" ] && [ "${{ needs.test.result }}" = "success" ]; then
+            echo ""                                           >> $GITHUB_STEP_SUMMARY
+            echo ":white_check_mark: **All checks passed**"   >> $GITHUB_STEP_SUMMARY
+          else
+            echo ""                                           >> $GITHUB_STEP_SUMMARY
+            echo ":x: **Pipeline failed — check details above**" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
