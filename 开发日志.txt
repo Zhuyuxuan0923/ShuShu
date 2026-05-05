@@ -13,8 +13,8 @@
 
 [版本信息]
   dbt-core: 1.9.4
-  dbt-postgres: 1.9.4
-  dbt-utils: 1.3.0
+  dbt-postgres: 1.9.1 (版本号独立于dbt-core)
+  dbt-utils: 已移除 (无模型引用, packages.yml已删除)
   SeaTunnel: 2.3.12
   Airflow: 2.11.1
   PostgreSQL: 16 (pgvector/pg16)
@@ -148,12 +148,90 @@
 
 [依赖版本兼容性矩阵]
   组件A          | 版本    | 组件B         | 版本    | 兼容?
-  dbt-core       | 1.9.4  | dbt-postgres  | 1.9.4  | ✓ 同版本号
-  dbt-core       | 1.9.4  | dbt-utils     | 1.3.0  | ✓ dbt-utils 1.3.x 兼容 dbt-core 1.9.x
+  dbt-core       | 1.9.4  | dbt-postgres  | 1.9.1  | ✓ 版本号独立, API兼容
   Airflow        | 2.11.1 | Python        | 3.11   | ✓ 官方镜像
   SeaTunnel      | 2.3.12 | JDK           | 17     | ✓ 官方镜像内置
   PostgreSQL     | 16     | JDBC Driver   | 42.7.4 | ✓ JDBC 42.x 兼容 PG 16
   Airflow        | 2.11.1 | psycopg2      | 2.9.9  | ✓
+
+================================================================================
+
+================================================================================
+  2026-05-05 | 业务数据源 + CI/CD + Bug修复 (v1.1.0)
+================================================================================
+
+[新增功能]
+  1. 业务交易数据源 (source_db)
+     - scripts/init_source_db.sh: 创建 source_db.business schema + 3张表 + 种子数据
+     - 3个 SeaTunnel JDBC job: business_customers/orders/order_items → ODS
+     - dbt 四层完整建模: ODS(3) → DWD(3) → DWS(2) → ADS(1)
+     - Airflow DAG 新增 3路并行摄入任务
+
+  2. GitHub Actions CI/CD
+     - .github/workflows/dbt_test.yml: push/PR 自动触发
+     - PostgreSQL 16 服务容器 + CI测试数据(6表29行)
+     - dbt seed → dbt build → dbt docs generate
+     - 上传 dbt docs + logs artifact (保留7天)
+     - README 绿色 Build Passing 徽章
+
+  3. dbt 宏: generate_schema_name.sql
+     - 覆盖默认schema命名, 直接用 custom_schema 不做前缀拼接
+     - 解决 public_dws vs dws 的问题
+
+  4. 行数波动监控告警 (row_count_monitor)
+     - airflow/plugins/row_count_monitor.py: 遍历四层所有表, COUNT(*) 对比昨日快照
+     - 波动率 >30% → 企微/钉钉 Markdown 告警 (含昨日/今日/变化率表格)
+     - 每日快照写入 dws.row_count_snapshot
+     - DAG 位置: transform → monitor_row_count → notify_quality → end
+     - 面试话术: "数据管道自愈第一步 —— 异常检测"
+
+  5. Mermaid 架构全景图
+     - README.md 新增 Mermaid flowchart: 数据源→摄入→存储→建模→质量→调度→告警→CI/CD
+     - 一张图展示项目全貌, GitHub 直接渲染
+
+  6. 告警截图引导
+     - README.md 新增告警消息截图说明
+     - 配置真实 webhook URL 即可收到企微/钉钉消息并截图
+
+[Bug修复]
+  1. dbt-postgres 版本: 1.9.4 不存在于 PyPI → 改用 ~=1.9.0 (解析为 1.9.1)
+  2. Schema 前缀问题: 默认宏生成 public_dws → 覆盖 generate_schema_name
+  3. QUALIFY 语法: PostgreSQL 不支持 → 所有 DWD 模型改用 SELECT DISTINCT ON
+  4. ROUND 类型错误: ads_business_kpi ROUND(double precision) → 加 ::NUMERIC 转换
+  5. 歧义列: dws_github_daily_activity event_type → 加表别名 e/c 限定
+  6. unique_key 不完整: dws_github_daily_activity → 覆盖所有 GROUP BY 列
+  7. packages.yml: dbt-utils 无引用但强制 dbt deps → 删除 packages.yml
+  8. deduplicate 宏: 保留为 no-op, 注释说明 PostgreSQL 用 DISTINCT ON
+
+[配置变更]
+  - dbt/packages.yml: 已删除
+  - dbt/macros/deduplicate.sql: 改为 no-op + 注释
+  - docker-compose.yml: 挂载 init_source_db.sh
+  - airflow/dags/data_warehouse_full_pipeline.py: 新增3个业务摄入任务 + monitor_row_count 任务
+  - airflow/plugins/row_count_monitor.py: 新建行数波动监控插件
+  - scripts/init_postgres.sh: 新增 dws.row_count_snapshot 快照表
+  - README.md: 新增 Mermaid 架构图 + dbt docs 血缘说明 + 告警截图引导
+  - dbt/models/ods/_ods_sources.yml: 新增3个源定义
+  - dbt/models/ods/_ods_models.yml: 新增 ODS 业务模型测试
+  - dbt/models/dwd/_dwd_models.yml: 新增 DWD 业务模型测试 + accepted_values
+  - dbt/models/dws/_dws_models.yml: 新增 DWS 业务模型测试
+  - dbt/models/ads/_ads_models.yml: 新增 ADS 业务模型测试
+
+[文件统计]
+  本次新增 15 个文件, 修改 9 个文件, 删除 1 个文件 (packages.yml)
+  项目总文件数: 约 58 个
+
+[CI 调试过程]
+  经历 8 轮修复才变绿:
+    Round 1: dbt compile 无DB → 移除 lint job
+    Round 2: dbt parse 需DB → 移到 test job
+    Round 3: dbt deps 连不上 Hub → 移除 dbt deps
+    Round 4: dbt-postgres==1.9.4 不存在 → ~=1.9.0
+    Round 5: packages.yml 强制 deps → git rm
+    Round 6: public_dws schema 前缀 → generate_schema_name 宏
+    Round 7: QUALIFY + ROUND 错误 → DISTINCT ON + ::NUMERIC
+    Round 8: 歧义列 + unique_key → 表别名 + 完整unique_key
+  最终: 150 PASS, 0 ERROR, 1 WARN (accepted_values 可选值未全覆盖, 非阻塞)
 
 ================================================================================
 
