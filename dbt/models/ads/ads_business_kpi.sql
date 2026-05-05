@@ -40,10 +40,10 @@ daily_trend AS (
         LAG(daily_revenue, 1) OVER (ORDER BY order_date_key) AS prev_day_revenue,
         CASE
             WHEN LAG(daily_revenue, 1) OVER (ORDER BY order_date_key) > 0
-            THEN ROUND(
+            THEN ROUND((
                 (daily_revenue - LAG(daily_revenue, 1) OVER (ORDER BY order_date_key))
-                / LAG(daily_revenue, 1) OVER (ORDER BY order_date_key) * 100, 2
-            )::DOUBLE PRECISION
+                / LAG(daily_revenue, 1) OVER (ORDER BY order_date_key) * 100
+            )::NUMERIC, 2)::DOUBLE PRECISION
             ELSE NULL
         END                                             AS revenue_dod_pct
     FROM daily_revenue
