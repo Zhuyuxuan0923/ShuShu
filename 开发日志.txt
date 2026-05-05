@@ -1,0 +1,196 @@
+================================================================================
+  开发日志 (Development Log)
+  项目: 企业级数据仓库与数据质量平台
+  创建日期: 2026-05-04
+================================================================================
+
+说明: 记录所有开发决策、版本变更、Bug修复、已知问题和待办事项。
+      每次修改项目后，在对应日期下追加记录。
+
+================================================================================
+  2026-05-04 | 项目初始化 (v1.0.0)
+================================================================================
+
+[版本信息]
+  dbt-core: 1.9.4
+  dbt-postgres: 1.9.4
+  dbt-utils: 1.3.0
+  SeaTunnel: 2.3.12
+  Airflow: 2.11.1
+  PostgreSQL: 16 (pgvector/pg16)
+  PostgreSQL JDBC: 42.7.4
+  Redis: 7-alpine
+  Airflow Python: 3.11.11
+
+[已创建的文件 - 44个]
+  基础设施层 (7):
+    .env.example          - 环境变量模板
+    .env                  - 本地配置(不提交)
+    .gitignore            - Git忽略规则
+    docker-compose.yml    - 7服务编排(postgres/seatunnel/airflow×3/redis/init)
+    README.md             - 项目说明和快速开始
+    data/.gitkeep         - SeaTunnel checkpoint卷占位
+
+  Docker镜像 (2):
+    docker/Dockerfile.airflow    - apache/airflow:2.11.1-python3.11 为基础
+                                   pip install: dbt-core/postgres/utils + requests + psycopg2
+    docker/Dockerfile.seatunnel  - apache/seatunnel:2.3.12 为基础
+                                   下载 PostgreSQL JDBC 42.7.4 到 lib/
+
+  SeaTunnel (4):
+    seatunnel/config/seatunnel.yaml            - Zeta引擎本地单节点配置
+    seatunnel/jobs/github_events_to_ods.conf   - HTTP Source(JSONPath提取8字段) → JDBC Sink
+    seatunnel/jobs/weather_forecast_to_ods.conf - 北京天气逐小时数据 → ods.weather_forecast
+    seatunnel/jobs/ecommerce_products_to_ods.conf - 商品数据(10字段) → ods.ecommerce_products
+
+  dbt 核心配置 (3):
+    dbt/dbt_project.yml    - 四层模型物化策略: ods=view, dwd/dws=incremental, ads=table
+    dbt/profiles.yml       - PostgreSQL连接, 环境变量读取凭据
+    dbt/packages.yml       - dbt-utils 1.3.0
+
+  dbt 宏 (3):
+    dbt/macros/pipeline_metadata.sql  - 注入 _ingested_at, source_system, _layer
+    dbt/macros/deduplicate.sql        - ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ...)
+    dbt/macros/freshness_check.sql    - 新鲜度检查日志
+
+  dbt ODS层 (5):
+    dbt/models/ods/_ods_sources.yml         - 3个外部源定义 + 新鲜度配置
+                                               GitHub: warn 6h / error 12h
+                                               天气:   warn 2h / error 4h
+                                               电商:   warn 24h / error 48h
+    dbt/models/ods/_ods_models.yml          - ODS模型级列测试
+    dbt/models/ods/ods_github_events.sql    - GitHub ODS视图(8列类型转换)
+    dbt/models/ods/ods_weather_forecast.sql - 天气ODS视图(7列)
+    dbt/models/ods/ods_ecommerce_products.sql - 电商ODS视图(12列)
+
+  dbt DWD层 (4):
+    dbt/models/dwd/_dwd_models.yml          - DWD列级测试(event_type枚举14种, rating_tier枚举4级)
+    dbt/models/dwd/dwd_github_events.sql    - 去重 + SPLIT_PART拆分owner/repo + UPPER标准化
+    dbt/models/dwd/dwd_weather_forecast.sql - 去重 + 天气码映射为weather_category(10种)
+    dbt/models/dwd/dwd_ecommerce_products.sql - 去重 + rating→tier + brand默认Unknown
+
+  dbt DWS层 (4):
+    dbt/models/dws/_dws_models.yml          - DWS列级测试(计数>0)
+    dbt/models/dws/dws_github_daily_activity.sql    - 按date+type聚合(event_count/actors/repos)
+    dbt/models/dws/dws_weather_daily_summary.sql    - 每日温度(min/max/avg)+湿度+降水
+    dbt/models/dws/dws_ecommerce_category_daily.sql - 类目聚合: 均价/库存价值/评分分布
+
+  dbt ADS层 (4):
+    dbt/models/ads/_ads_models.yml              - ADS列级测试(环比范围[-100,1000])
+    dbt/models/ads/ads_github_trending.sql      - 窗口函数: 日环比/周环比 + RANK
+    dbt/models/ads/ads_weather_alert.sql         - 极端天气告警: >38°C高温 + 雷暴
+    dbt/models/ads/ads_ecommerce_kpi.sql         - 类目排名: revenue_rank + star/core/niche分级
+
+  dbt 测试 (4):
+    dbt/tests/generic/test_reasonable_range.sql   - 通用数值范围测试
+    dbt/tests/generic/test_not_null_multicol.sql  - 通用多列非空测试
+    dbt/tests/specific/test_ods_github_no_empty_events.sql - GitHub空事件检测
+    dbt/tests/specific/test_dws_positive_counts.sql      - DWS非负计数验证
+
+  dbt 种子 (1):
+    dbt/seeds/event_type_categories.csv - 14种GitHub事件→业务分类(code/engagement/collaboration...)
+
+  Airflow (4):
+    airflow/requirements.txt             - Python依赖: requests, psycopg2-binary
+    airflow/dags/data_warehouse_full_pipeline.py  - 主DAG
+        调度: 每天 07:00 UTC
+        Tasks: start → freshness → ingest_all(parallel×3) → transform(seed/run/test/docs) → notify → end
+    airflow/dags/github_archive_pipeline.py       - 单源GitHub DAG
+        调度: 每30分钟
+        Tasks: start → ingest → wait → run → test → end
+    airflow/plugins/webhook_notifier.py   - 告警插件
+        读取 /opt/dbt/target/run_results.json
+        汇总 pass/fail/error 计数
+        失败: 生成Markdown表格(最多20条详情)
+        成功: 简单通过消息
+        POST到 企微 + 钉钉 webhook
+
+  文档 (5):
+    docs/architecture.md                - 架构全景图 + 分层说明 + 技术选型理由
+    docs/data_quality_framework.md      - 质量策略 + 4源测试矩阵 + 自定义测试说明
+    docs/operations.md                  - 运维手册: 启动/停止/dbt命令/psql命令/故障排查
+    docs/onboarding/template.md         - 新数据源9步接入模板(源标识→Schema→介入→验证→上线)
+    docs/onboarding/source_github_events.md - 以GitHub为例的完整填写示例
+
+  脚本 (2):
+    scripts/init_postgres.sh - PostgreSQL容器首次启动执行: 创建airflow+data_warehouse库, 5个schema
+    scripts/init_airflow.sh  - Airflow初始化: db migrate + 创建admin用户
+
+[实现决策]
+  1. SeaTunnel > DataX: SeaTunnel有原生HTTP连接器，DataX需要自己写
+  2. dbt在Airflow容器内运行，不单独部署dbt服务（dbt是CLI工具，无状态）
+  3. ODS用view而不是table：始终反映源表最新数据，避免ODS层数据不同步
+  4. DWD/DWS用incremental：提高增量处理效率
+  5. ADS用table：数据量小(聚合结果)，全量重建更可靠
+  6. 单PostgreSQL双库：本地开发简化，生产应分离
+  7. SeaTunnel Zeta本地模式：无需Spark/Flink集群，REST API直接触发
+
+[已知限制和风险]
+  1. GitHub API 未认证限60次/小时 → 单源DAG每30分钟调度，刚好不超
+  2. 当前使用 GitHub Events API（每次30条），不是完整的 GH Archive（NDJSON格式更复杂）
+  3. DummyJSON 数据是静态fake数据，不更新，新鲜度检查设为48小时
+  4. SeaTunnel Zeta REST API的 curl POST 方式不够健壮，生产应改用 SimpleHttpOperator
+  5. Webhook URL未配置时告警静默跳过，不会报错（可接受）
+  6. 企微Markdown不支持表格中的 | 管道符，需转义
+  7. docker-compose.yml 中 Fernet Key 和 Secret Key 是硬编码的，生产环境应使用 Secrets
+
+[待办事项]
+  [ ] 测试 Docker 构建是否成功
+  [ ] 测试 SeaTunnel 3个Job是否能成功拉取API数据
+  [ ] 测试 dbt run 全部模型
+  [ ] 测试 dbt test 全部通过
+  [ ] 测试 Airflow DAG 不报解析错误
+  [ ] 配置真实企微/钉钉 Webhook URL 并测试告警消息
+  [ ] 测试 dbt docs serve 血缘图
+  [ ] 补充更多数据源（如需要）
+  [ ] 考虑添加 Great Expectations 作为补充质量框架
+  [ ] 考虑生产环境切换到 OpenLineage
+
+[依赖版本兼容性矩阵]
+  组件A          | 版本    | 组件B         | 版本    | 兼容?
+  dbt-core       | 1.9.4  | dbt-postgres  | 1.9.4  | ✓ 同版本号
+  dbt-core       | 1.9.4  | dbt-utils     | 1.3.0  | ✓ dbt-utils 1.3.x 兼容 dbt-core 1.9.x
+  Airflow        | 2.11.1 | Python        | 3.11   | ✓ 官方镜像
+  SeaTunnel      | 2.3.12 | JDK           | 17     | ✓ 官方镜像内置
+  PostgreSQL     | 16     | JDBC Driver   | 42.7.4 | ✓ JDBC 42.x 兼容 PG 16
+  Airflow        | 2.11.1 | psycopg2      | 2.9.9  | ✓
+
+================================================================================
+
+================================================================================
+  Bug追踪模板 (发现Bug时复制填写)
+================================================================================
+
+[Bug ID]: BUG-YYYYMMDD-001
+[发现日期]:
+[严重程度]: [Critical / High / Medium / Low]
+[影响范围]: [哪个服务/文件/功能]
+[现象描述]:
+[复现步骤]:
+  1.
+  2.
+  3.
+[预期行为]:
+[实际行为]:
+[根因分析]:
+[修复方案]:
+[修复人/日期]:
+[验证结果]:
+
+================================================================================
+
+================================================================================
+  变更记录模板 (每次修改代码后填写)
+================================================================================
+
+[变更日期]:
+[变更ID]: CHG-YYYYMMDD-001
+[变更类型]: [新功能 / Bug修复 / 配置变更 / 重构 / 版本升级]
+[变更文件]:
+  - 文件路径1: 变更说明
+  - 文件路径2: 变更说明
+[变更原因]:
+[影响分析]: [是否影响下游DAG/dbt模型/其他服务]
+[回滚方案]:
+
+================================================================================

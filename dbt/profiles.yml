@@ -1,0 +1,13 @@
+data_warehouse:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('DBT_HOST', 'postgres') }}"
+      port: 5432
+      user: "{{ env_var('POSTGRES_USER', 'dw_admin') }}"
+      password: "{{ env_var('POSTGRES_PASSWORD', 'dw_secure_pwd_2025') }}"
+      dbname: "{{ env_var('POSTGRES_DW_DB', 'data_warehouse') }}"
+      schema: public
+      threads: 4
+      keepalives_idle: 0

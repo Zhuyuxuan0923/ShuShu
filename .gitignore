@@ -1,0 +1,35 @@
+# Environment
+.env
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+
+# dbt
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+
+# Airflow
+airflow/logs/
+airflow/plugins/__pycache__/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Docker
+Dockerfile.*.local
+
+# Data
+data/*
+!data/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db

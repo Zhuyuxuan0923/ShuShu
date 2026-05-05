@@ -1,0 +1,15 @@
+event_type,category,description
+PushEvent,code,Code push to repository
+WatchEvent,engagement,User starred a repository
+PullRequestEvent,collaboration,Pull request opened/closed/merged
+IssuesEvent,collaboration,Issue opened/closed/reopened
+IssueCommentEvent,collaboration,Comment on an issue
+CreateEvent,code,Branch or tag created
+DeleteEvent,code,Branch or tag deleted
+ForkEvent,code,Repository forked
+CommitCommentEvent,collaboration,Comment on a commit
+PublicEvent,engagement,Repository made public
+GollumEvent,documentation,Wiki page updated
+MemberEvent,team,User added to repository
+ReleaseEvent,release,Release published
+SponsorshipEvent,engagement,Sponsorship activity

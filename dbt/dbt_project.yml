@@ -1,0 +1,38 @@
+name: 'enterprise_data_warehouse'
+version: '1.0.0'
+config-version: 2
+
+profile: 'data_warehouse'
+
+model-paths: ["models"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  enterprise_data_warehouse:
+    ods:
+      +schema: ods
+      +materialized: view
+      +tags: ["ods", "source_aligned"]
+    dwd:
+      +schema: dwd
+      +materialized: incremental
+      +tags: ["dwd", "cleansed"]
+      +on_schema_change: append_new_columns
+    dws:
+      +schema: dws
+      +materialized: incremental
+      +tags: ["dws", "aggregated"]
+    ads:
+      +schema: ads
+      +materialized: table
+      +tags: ["ads", "application"]
+
+vars:
+  environment: '{{ env_var("DBT_ENV", "dev") }}'

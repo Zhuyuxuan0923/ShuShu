@@ -1,0 +1,287 @@
+================================================================================
+  企业级数据仓库与数据质量平台 - 项目总结
+  创建日期: 2026-05-04
+================================================================================
+
+一、项目目标
+───────────
+搭建完整的 ODS→DWD→DWS→ADS 四层数仓，具备：
+1. 多源异构数据摄入（GitHub/天气/电商3个开放API）
+2. 数据清洗、去重、标准化
+3. 聚合指标与应用报表
+4. 数据质量自动检查（新鲜度/唯一性/非空/值范围）
+5. 任务调度编排
+6. 企业微信/钉钉告警通知
+7. 数据血缘追踪
+8. 标准化的新数据源接入规范
+
+二、技术栈
+─────────
+- 摄入:    Apache SeaTunnel 2.3.12 (Zeta引擎, HTTP Source + JDBC Sink)
+- 存储:    PostgreSQL 16 (pgvector/pg16), 双库: data_warehouse + airflow
+- 建模:    dbt-core 1.9.4 + dbt-postgres 1.9.4 + dbt-utils 1.3.0
+- 调度:    Apache Airflow 2.11.1 (CeleryExecutor)
+- 缓存:    Redis 7-alpine
+- 部署:    Docker Compose 3.9
+- 告警:    Python requests → 企微/钉钉 Webhook
+
+三、目录结构 (44个文件)
+─────────────────────
+项目根目录/
+├── .env                        # 敏感配置(密码/webhook URL)，gitignore
+├── .env.example                # 配置模板，可提交
+├── .gitignore
+├── README.md                   # 快速开始指南
+├── docker-compose.yml          # 7服务编排
+│
+├── docker/
+│   ├── Dockerfile.airflow      # Airflow + dbt 定制镜像
+│   └── Dockerfile.seatunnel    # SeaTunnel + PostgreSQL JDBC驱动
+│
+├── seatunnel/
+│   ├── config/seatunnel.yaml   # Zeta引擎本地模式配置
+│   └── jobs/
+│       ├── github_events_to_ods.conf       # GitHub Events API 摄入
+│       ├── weather_forecast_to_ods.conf    # Open-Meteo 天气摄入
+│       └── ecommerce_products_to_ods.conf  # DummyJSON 电商摄入
+│
+├── dbt/
+│   ├── dbt_project.yml         # 项目配置: 四层物化策略
+│   ├── profiles.yml            # PostgreSQL 连接配置
+│   ├── packages.yml            # dbt依赖: dbt-utils
+│   ├── macros/
+│   │   ├── pipeline_metadata.sql   # 注入 _ingested_at/_source_system/_layer
+│   │   ├── deduplicate.sql         # ROW_NUMBER() 去重
+│   │   └── freshness_check.sql     # 新鲜度日志
+│   ├── seeds/
+│   │   └── event_type_categories.csv  # GitHub事件类型→业务分类映射
+│   ├── models/
+│   │   ├── ods/
+│   │   │   ├── _ods_sources.yml        # 源定义 + 新鲜度配置
+│   │   │   ├── _ods_models.yml         # ODS模型级测试
+│   │   │   ├── ods_github_events.sql   # GitHub ODS视图
+│   │   │   ├── ods_weather_forecast.sql
+│   │   │   └── ods_ecommerce_products.sql
+│   │   ├── dwd/
+│   │   │   ├── _dwd_models.yml         # DWD列级测试(去重/枚举/非空)
+│   │   │   ├── dwd_github_events.sql   # 拆分repo_owner/repo_name_short
+│   │   │   ├── dwd_weather_forecast.sql # 天气code→中文分类
+│   │   │   └── dwd_ecommerce_products.sql # 评分→等级(platinum/gold/...)
+│   │   ├── dws/
+│   │   │   ├── _dws_models.yml
+│   │   │   ├── dws_github_daily_activity.sql  # 按日期+事件类型聚合
+│   │   │   ├── dws_weather_daily_summary.sql  # 每日温度/降水汇总
+│   │   │   └── dws_ecommerce_category_daily.sql # 按类目聚合
+│   │   └── ads/
+│   │       ├── _ads_models.yml
+│   │       ├── ads_github_trending.sql    # 7日趋势 + 日环比/周环比 + 排名
+│   │       ├── ads_weather_alert.sql      # 极端高温/雷暴告警
+│   │       └── ads_ecommerce_kpi.sql      # 类目收入排名 + star/core/niche分级
+│   └── tests/
+│       ├── generic/
+│       │   ├── test_reasonable_range.sql  # 数值范围通用测试
+│       │   └── test_not_null_multicol.sql # 多列非空通用测试
+│       └── specific/
+│           ├── test_ods_github_no_empty_events.sql
+│           └── test_dws_positive_counts.sql
+│
+├── airflow/
+│   ├── requirements.txt        # Python依赖
+│   ├── dags/
+│   │   ├── data_warehouse_full_pipeline.py  # 主DAG: 每日07:00 UTC
+│   │   └── github_archive_pipeline.py       # 单源DAG: 每30分钟
+│   └── plugins/
+│       └── webhook_notifier.py  # 读取dbt测试结果 → 企微/钉钉Markdown通知
+│
+├── docs/
+│   ├── architecture.md                 # 架构全景图 + 技术选型理由
+│   ├── data_quality_framework.md       # 质量策略 + 测试矩阵 + 告警流程
+│   ├── operations.md                   # 运维手册(启动/常用命令/故障排查/重置)
+│   └── onboarding/
+│       ├── template.md                 # 新数据源9步接入模板
+│       └── source_github_events.md     # 填写完整的GitHub接入示例
+│
+├── scripts/
+│   ├── init_postgres.sh         # PostgreSQL初始化: 建库 + ods/dwd/dws/ads schema
+│   └── init_airflow.sh          # Airflow初始化: db migrate + 创建admin用户
+│
+└── data/
+    └── .gitkeep                 # SeaTunnel checkpoint卷挂载点
+
+四、数仓分层说明
+───────────────
+ODS (Operational Data Store)
+  - Schema: ods
+  - 物化: view (始终反映源表最新数据)
+  - 职责: 1:1镜像源数据，类型转换(char→varchar, string→timestamptz)
+  - 附加列: _ingested_at, source_system
+
+DWD (Data Warehouse Detail)
+  - Schema: dwd
+  - 物化: incremental (按_ingested_at增量更新)
+  - 职责: 去重(QUALIFY ROW_NUMBER), 清洗(TRIM/UPPER), 标准化(枚举映射)
+  - 附加列: _dwd_processed_at
+
+DWS (Data Warehouse Service)
+  - Schema: dws
+  - 物化: incremental (按日期/类目分区增量)
+  - 职责: COUNT DISTINCT聚合, SUM/AVG/MIN/MAX, 汇总指标
+  - 附加列: _dws_processed_at
+
+ADS (Application Data Service)
+  - Schema: ads
+  - 物化: table (全量重建，数据量小)
+  - 职责: 窗口函数(环比/排名), 业务规则判断(告警/分级)
+  - 附加列: _ads_generated_at
+
+五、数据质量测试矩阵
+─────────────────
+层    | 测试类型          | 具体检查
+ODS   | freshness         | GitHub数据>6h告警, >12h报错
+ODS   | not_null, unique  | PK列(id)、关键字段(type/repo_name)
+DWD   | not_null, unique  | event_id, forecast_time, product_id
+DWD   | accepted_values   | event_type(14种), rating_tier(4级)
+DWD   | not_null          | repo_owner, repo_name_short, weather_category
+ADS   | reasonable_range  | day_over_day_pct 在 [-100, 1000]
+ADS   | accepted_values   | alert_type severity [warning, critical]
+
+六、数据源信息
+────────────
+1. GitHub Events API
+   地址: https://api.github.com/events
+   认证: 无 (60次/小时限制)
+   格式: JSON Array, 每次返回最近30条公开事件
+   输出: ods.github_events → 14种事件类型
+
+2. Open-Meteo Weather API
+   地址: https://api.open-meteo.com/v1/forecast
+   认证: 无 (无速率限制，非商业用途)
+   参数: 北京坐标(39.9,116.4), 温度/湿度/降水/天气码, 1天逐小时
+   输出: ods.weather_forecast → 24条/次
+
+3. DummyJSON Products API
+   地址: https://dummyjson.com/products?limit=100
+   认证: 无
+   格式: JSON, products数组, 100条商品数据
+   输出: ods.ecommerce_products → 100条/次
+
+七、Docker Compose 服务清单
+─────────────────────────
+服务名               | 容器名               | 端口  | 镜像
+postgres             | dw_postgres          | 5432  | pgvector/pgvector:pg16
+seatunnel            | dw_seatunnel         | 5801  | 自定义(Dockerfile.seatunnel)
+airflow-webserver    | dw_airflow_webserver | 8080  | 自定义(Dockerfile.airflow)
+airflow-scheduler    | dw_airflow_scheduler | -     | 自定义(Dockerfile.airflow)
+airflow-worker       | dw_airflow_worker    | -     | 自定义(Dockerfile.airflow)
+redis                | dw_redis             | 6379  | redis:7-alpine
+airflow-init         | dw_airflow_init      | -     | 自定义(初始化后退出)
+
+网络: dw_net (bridge)
+卷:   postgres_data, seatunnel_data
+
+八、Airflow DAG 设计
+──────────────────
+1. data_warehouse_full_pipeline (主DAG)
+   调度: 每天 07:00 UTC
+   流程:
+     start
+       → check_source_freshness (dbt source freshness)
+       → ingest_all (3路并行 SeaTunnel 触发)
+         ├── ingest_github_events
+         ├── ingest_weather_forecast
+         └── ingest_ecommerce_products
+       → wait_for_ingestion (sleep 30s)
+       → transform
+         ├── dbt_seed (加载种子数据)
+         ├── dbt_run (运行所有模型)
+         ├── dbt_test (运行所有测试)
+         └── dbt_docs_generate
+       → notify_data_quality (Python → 企微/钉钉)
+       → end
+
+2. github_archive_pipeline (单源DAG)
+   调度: 每30分钟
+   流程:
+     start → ingest → wait_ods → dbt_run_github → dbt_test_github → end
+   用途: 开发调试 + 独立高频采集
+
+九、告警机制
+──────────
+触发: dbt test 执行后
+来源: /opt/dbt/target/run_results.json
+格式: Markdown消息
+  - 标题: "Data Quality Alert - FAILED" 或 "Data Quality Check - PASSED"
+  - 内容: DAG名 + 时间 + 测试计数(通过/失败/错误)
+  - 失败附加: 最多20条失败详情表格
+推送: 企业微信/钉钉群机器人Webhook
+配置: .env 中 WECOM_WEBHOOK_URL / DINGTALK_WEBHOOK_URL
+
+十、数据血缘
+──────────
+方式1: dbt docs generate → 自动生成模型DAG (基于 ref() 调用)
+方式2: 每张表注入 _source_system + _layer + _ingested_at 审计列
+生产扩展: 接入 OpenLineage (airflow-openlineage 包 + OPENLINEAGE_URL 环境变量)
+
+十一、新数据源接入流程 (9步)
+─────────────────────────
+1. 填写 docs/onboarding/template.md 中的源标识和Schema
+2. 编写 seatunnel/jobs/{source}_to_ods.conf (HTTP source + JDBC sink)
+3. 创建 dbt/models/ods/ods_{source}.sql (类型转换视图)
+4. 在 dbt/models/ods/_ods_sources.yml 添加源定义+新鲜度
+5. 创建 dbt/models/dwd/dwd_{source}.sql (清洗+去重)
+6. 创建 dbt/models/dws/dws_{source}_daily.sql (聚合)
+7. 创建 dbt/models/ads/ads_{source}_kpi.sql (业务应用)
+8. 在各层 _models.yml 中声明列级测试
+9. 在主DAG中新增 TaskGroup，或创建独立单源DAG
+   归档 onboarding 文档
+
+十二、常用运维命令
+───────────────
+# 启动
+docker compose up -d
+
+# 查看状态
+docker compose ps
+
+# 进入scheduler
+docker compose exec airflow-scheduler bash
+
+# 手动dbt
+cd /opt/dbt && dbt run && dbt test
+
+# 手动触发DAG
+docker compose exec airflow-scheduler airflow dags trigger data_warehouse_full_pipeline
+
+# 连接数据库
+docker compose exec postgres psql -U dw_admin -d data_warehouse
+
+# 完全重置
+docker compose down -v && docker compose up -d
+
+# 查看日志
+docker compose logs -f airflow-scheduler
+docker compose logs -f seatunnel
+
+十三、已知注意事项
+───────────────
+1. GitHub API 未认证限60次/小时，单源DAG每30分钟触发刚好不超限
+2. Python 3.14.4 太新，本项目全部容器化避免兼容问题
+3. SeaTunnel Zeta引擎REST API使用 curl POST 触发，生产建议换成 SimpleHttpOperator
+4. dbt 1.10.4 对 Python 3.11 兼容，容器内使用 3.11.11
+5. webhook URL 为空时不会报错，仅在日志中提示 skipping
+6. 企微/钉钉 Markdown 支持有限，复杂表格可能渲染不完整
+
+十四、文件总数
+────────────
+共 44 个文件
+  - 配置文件:   7
+  - Docker:     2
+  - SeaTunnel:  4
+  - dbt模型:   12
+  - dbt测试:    4
+  - dbt配置:    7 (project/profiles/packages/macros×3/seeds)
+  - Airflow:    4
+  - 文档:       5
+  - 脚本:       2
+  - 数据:       1 (.gitkeep)
+================================================================================

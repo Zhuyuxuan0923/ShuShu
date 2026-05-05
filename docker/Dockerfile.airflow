@@ -1,0 +1,18 @@
+FROM apache/airflow:2.11.1-python3.11
+
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    build-essential \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+USER airflow
+
+COPY airflow/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+COPY scripts/install_dbt.sh /tmp/install_dbt.sh
+
+ENV DBT_PROFILES_DIR=/opt/dbt
+ENV PYTHONPATH="/opt/airflow/plugins:${PYTHONPATH}"

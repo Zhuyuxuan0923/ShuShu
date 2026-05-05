@@ -1,0 +1,14 @@
+FROM apache/seatunnel:2.3.12
+
+USER root
+
+RUN curl -L -o $SEATUNNEL_HOME/lib/postgresql-42.7.4.jar \
+    https://jdbc.postgresql.org/download/postgresql-42.7.4.jar
+
+RUN useradd -ms /bin/bash seatunnel && \
+    chown -R seatunnel:seatunnel $SEATUNNEL_HOME/lib/
+
+USER seatunnel
+
+ENV SEATUNNEL_HOME=/opt/seatunnel
+WORKDIR $SEATUNNEL_HOME

@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker --version)",
+      "Bash(docker compose *)",
+      "Bash(git *)",
+      "Bash(systeminfo)",
+      "WebSearch",
+      "Bash(where docker *)",
+      "Bash(command -v docker)",
+      "Read(//c/Program Files/Docker/Docker/resources/bin/**)",
+      "Read(//c/Program Files/Docker/Docker/**)",
+      "Read(//c/Program Files/**)",
+      "Read(//c/Program Files \\(x86\\)/**)",
+      "Bash(reg query *)",
+      "Bash(winget *)",
+      "Bash(choco *)",
+      "Bash(wsl --status)",
+      "Bash(wsl --list --verbose)",
+      "Bash(wsl *)",
+      "Bash(docker info *)",
+      "Read(//c/Users/86136/AppData/Roaming/Docker/**)",
+      "Read(//c/Users/86136/AppData/Roaming/Docker//**)",
+      "Bash(DOCKER_BUILDKIT=0 docker compose -p datawarehouse up -d)",
+      "Bash(DOCKER_BUILDKIT=0 docker compose -p datawarehouse up -d --build)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8080/health)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8080/)",
+      "Bash(docker exec dw_airflow_scheduler *)",
+      "Bash(docker exec dw_postgres *)",
+      "Bash(curl *)",
+      "Bash(docker exec dw_airflow_webserver *)"
+    ]
+  }
+}

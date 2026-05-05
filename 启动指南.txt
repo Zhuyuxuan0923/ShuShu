@@ -1,0 +1,52 @@
+项目启动指南 - 企业级数据仓库与数据质量平台
+=============================================
+
+前置条件:
+  1. Docker Desktop 已安装并运行
+  2. Docker Desktop Settings → Docker Engine 中已配置 registry-mirrors（国内网络必需）:
+     {
+       "registry-mirrors": [
+         "https://docker.m.daocloud.io",
+         "https://dockerhub.timeweb.cloud",
+         "https://docker.1ms.run"
+       ]
+     }
+  3. 如配了代理/VPN，可跳过镜像加速器
+
+启动步骤:
+
+  1. 进入项目目录:
+     cd C:\Users\86136\Desktop\企业级数据仓库与数据质量平台
+
+  2. 启动所有服务（首次需要构建镜像，约 5-10 分钟）:
+     DOCKER_BUILDKIT=0 docker compose -p datawarehouse up -d --build
+
+  3. 等待初始化完成（查看 airflow-init 容器退出）:
+     docker compose -p datawarehouse ps -a
+     # 看到 dw_airflow_init 状态为 Exited (0) 即完成
+
+  4. 检查所有服务是否正常运行:
+     docker compose -p datawarehouse ps
+     # 预期: webserver/scheduler/worker/postgres/redis/seatunnel 均为 Up
+
+  5. 访问 Airflow UI:
+     浏览器打开 http://localhost:8080
+     用户名: admin  密码: admin
+
+服务端口:
+  Airflow UI      http://localhost:8080
+  PostgreSQL      localhost:5432
+  SeaTunnel API   localhost:5801
+
+关闭项目（保留数据）:
+  docker compose -p datawarehouse down
+
+关闭并清除所有数据:
+  docker compose -p datawarehouse down -v
+
+已知注意事项:
+  - dbt deps（安装 dbt_utils 等 Hub 包）因网络限制会失败，不影响核心功能
+  - 企微/钉钉告警需要在 .env 中填入真实的 WECOM_WEBHOOK_URL 和 DINGTALK_WEBHOOK_URL
+  - 首次启动时 dbt 安装较慢（pip 依赖解析），耐心等待 init 容器完成
+  - 如 scheduler/worker 启动失败报 "database not initialized"，重启即可:
+    docker compose -p datawarehouse restart airflow-scheduler airflow-worker

@@ -1,6 +1,6 @@
 # 企业级数据仓库与数据质量平台
 
-[![dbt CI/CD](https://github.com/YOUR_USERNAME/YOUR_REPO/actions/workflows/dbt_test.yml/badge.svg)](https://github.com/YOUR_USERNAME/YOUR_REPO/actions/workflows/dbt_test.yml)
+[![dbt CI/CD](https://github.com/Zhuyuxuan0923/ShuShu/actions/workflows/dbt_test.yml/badge.svg)](https://github.com/YOUR_USERNAME/YOUR_REPO/actions/workflows/dbt_test.yml)
 [![dbt core](https://img.shields.io/badge/dbt--core-1.9.4-orange?logo=dbt)](https://github.com/dbt-labs/dbt-core)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169e1?logo=postgresql)](https://www.postgresql.org/)
 

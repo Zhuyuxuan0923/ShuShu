@@ -1,0 +1,36 @@
+项目运行状态 - 2026-05-05
+=====================
+
+服务状态:
+  Airflow Webserver   运行中    http://localhost:8080
+  Airflow Scheduler   运行中    -
+  Airflow Worker      运行中    -
+  PostgreSQL          运行中    localhost:5432
+  Redis               运行中    -
+  SeaTunnel           运行中    localhost:5801
+
+访问方式:
+  URL:      http://localhost:8080
+  用户名:   admin
+  密码:     admin
+
+组件版本:
+  dbt-core            1.9.10
+  dbt-postgres        1.9.1
+  Apache SeaTunnel    2.3.12
+  Apache Airflow      2.11.1
+  PostgreSQL          16
+  Redis               7-alpine
+
+已修复的问题:
+  1. Dockerfile.seatunnel: 添加 useradd 创建 seatunnel 用户
+  2. Dockerfile.airflow: dbt 改为容器启动时安装，避免 pip 依赖解析超时
+  3. requirements.txt: 更新 requests/psycopg2-binary 到兼容版本
+  4. docker-compose.yml: 修复 SeaTunnel config 挂载路径和启动命令
+  5. scripts/install_dbt.sh: 新增 dbt 启动安装脚本
+  6. data_warehouse_full_pipeline.py: python_callable 从字符串改为函数引用
+  7. 两个 DAG 的 schedule_interval → schedule（适配 Airflow 2.11.1）
+
+已知限制:
+  - dbt deps 无法连接 hub.getdbt.com（网络限制），dbt Hub 包暂未安装
+  - Docker Hub 镜像拉取需配置 registry mirror（已在 Docker Desktop Settings 中配置）
