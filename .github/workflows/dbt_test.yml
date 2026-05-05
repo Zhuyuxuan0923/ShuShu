@@ -18,10 +18,10 @@ concurrency:
 
 jobs:
   # ==========================================================================
-  # Job 1: Lint — validate project structure, YAML schema, SQL compilation
-  # No database needed. Fast (~30s). Catches 80% of errors.
+  # Job 1: Deps — validate packages.yml, download dependencies
+  # No database needed. Fast (~20s).
   # ==========================================================================
-  lint:
+  deps:
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -31,7 +31,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: "pip"
 
       - name: Install dbt
         run: |
@@ -42,16 +41,11 @@ jobs:
         working-directory: dbt
         run: dbt deps --profiles-dir .
 
-      - name: dbt parse
-        working-directory: dbt
-        run: dbt parse --profiles-dir .
-
   # ==========================================================================
-  # Job 2: Test — full pipeline ODS→DWD→DWS→ADS + data quality tests
-  # Spins up PostgreSQL service container, seeds test data, runs dbt build.
+  # Job 2: Test — full pipeline with PostgreSQL: parse → build → test → docs
   # ==========================================================================
   test:
-    needs: lint
+    needs: deps
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -76,7 +70,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: "pip"
 
       - name: Install dependencies
         run: |
@@ -97,9 +90,7 @@ jobs:
         run: |
           PGPASSWORD=dw_secure_pwd_2025 psql -h localhost -U dw_admin -d data_warehouse <<'SQL'
 
-            -- ================================================================
             -- github_events: 5 rows covering distinct event types
-            -- ================================================================
             DROP TABLE IF EXISTS ods.github_events;
             CREATE TABLE ods.github_events (
               id TEXT, type TEXT, actor_login TEXT, actor_id BIGINT,
@@ -113,9 +104,7 @@ jobs:
               ('4', 'PullRequestEvent',  'dev4', 1004, 'pgvector/pgvector',  2004, '2025-05-01T13:00:00Z', true,  'github', NOW()),
               ('5', 'ForkEvent',         'dev5', 1005, 'redis/redis',        2005, '2025-05-01T14:00:00Z', true,  'github', NOW());
 
-            -- ================================================================
             -- weather_forecast: 3 rows mapping to clear / rain / thunderstorm
-            -- ================================================================
             DROP TABLE IF EXISTS ods.weather_forecast;
             CREATE TABLE ods.weather_forecast (
               time TEXT, temperature_2m DOUBLE PRECISION, humidity INTEGER,
@@ -127,9 +116,7 @@ jobs:
               ('2025-05-01T12:00', 30.1, 55, 2.1,  30, 'open_meteo', NOW()),
               ('2025-05-01T15:00', 35.8, 70, 12.5, 80, 'open_meteo', NOW());
 
-            -- ================================================================
             -- ecommerce_products: 3 rows mapping to platinum / gold / silver
-            -- ================================================================
             DROP TABLE IF EXISTS ods.ecommerce_products;
             CREATE TABLE ods.ecommerce_products (
               id INTEGER, title TEXT, description TEXT,
@@ -143,9 +130,7 @@ jobs:
               (2, 'MacBook Air M3', 'Apple laptop',     7999.00, 0.0,  4.2,  50, 'Apple',  'Laptops',     'http://img/2.jpg', 'dummyjson', NOW()),
               (3, 'Cheap Earbuds',  'Budget audio',       99.00, 10.0, 3.5, 500, 'NoName', 'Audio',       'http://img/3.jpg', 'dummyjson', NOW());
 
-            -- ================================================================
             -- business_customers: 2 rows, both customer_type values
-            -- ================================================================
             DROP TABLE IF EXISTS ods.business_customers;
             CREATE TABLE ods.business_customers (
               customer_id INTEGER, customer_name TEXT, email TEXT,
@@ -156,9 +141,7 @@ jobs:
               (1, '深圳创新科技', 'contact@szcx.com',  '0755-26881234', '深圳', '2024-03-15', 'corporate',  'source_db', NOW()),
               (2, '张伟',         'zhangwei@email.cn', '13800138001',   '北京', '2024-01-05', 'individual', 'source_db', NOW());
 
-            -- ================================================================
             -- business_orders: 4 rows covering all 4 statuses + all payment channels
-            -- ================================================================
             DROP TABLE IF EXISTS ods.business_orders;
             CREATE TABLE ods.business_orders (
               order_id INTEGER, customer_id INTEGER, order_date TIMESTAMP,
@@ -172,9 +155,7 @@ jobs:
               (3, 2, '2025-05-01 18:00:00', 'cancelled',   'wechat_pay',      560.00, 'CNY', 'source_db', NOW()),
               (4, 2, '2025-05-03 10:00:00', 'refunded',    'bank_transfer',  1200.00, 'CNY', 'source_db', NOW());
 
-            -- ================================================================
             -- business_order_items: 5 rows linked to the orders above
-            -- ================================================================
             DROP TABLE IF EXISTS ods.business_order_items;
             CREATE TABLE ods.business_order_items (
               item_id INTEGER, order_id INTEGER, product_name TEXT,
@@ -197,6 +178,10 @@ jobs:
       - name: dbt deps
         working-directory: dbt
         run: dbt deps --profiles-dir .
+
+      - name: dbt parse
+        working-directory: dbt
+        run: dbt parse --profiles-dir .
 
       - name: dbt seed
         working-directory: dbt
@@ -228,28 +213,3 @@ jobs:
           path: dbt/logs/
           retention-days: 7
         if: always()
-
-  # ==========================================================================
-  # Job 3: Summary — aggregate results, set final status
-  # ==========================================================================
-  summary:
-    needs: [lint, test]
-    if: always()
-    runs-on: ubuntu-latest
-    timeout-minutes: 1
-    steps:
-      - name: Final status
-        run: |
-          echo "| Stage | Status |"                          >> $GITHUB_STEP_SUMMARY
-          echo "| :---- | :----- |"                           >> $GITHUB_STEP_SUMMARY
-          echo "| lint  | ${{ needs.lint.result    }}"        >> $GITHUB_STEP_SUMMARY
-          echo "| test  | ${{ needs.test.result    }}"        >> $GITHUB_STEP_SUMMARY
-
-          if [ "${{ needs.lint.result }}" = "success" ] && [ "${{ needs.test.result }}" = "success" ]; then
-            echo ""                                           >> $GITHUB_STEP_SUMMARY
-            echo ":white_check_mark: **All checks passed**"   >> $GITHUB_STEP_SUMMARY
-          else
-            echo ""                                           >> $GITHUB_STEP_SUMMARY
-            echo ":x: **Pipeline failed — check details above**" >> $GITHUB_STEP_SUMMARY
-            exit 1
-          fi
