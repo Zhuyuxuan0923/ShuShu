@@ -46,10 +46,6 @@ jobs:
         working-directory: dbt
         run: dbt parse --profiles-dir .
 
-      - name: dbt compile
-        working-directory: dbt
-        run: dbt compile --profiles-dir .
-
   # ==========================================================================
   # Job 2: Test — full pipeline ODS→DWD→DWS→ADS + data quality tests
   # Spins up PostgreSQL service container, seeds test data, runs dbt build.
