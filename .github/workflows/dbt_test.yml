@@ -21,6 +21,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
+    env:
+      DBT_HOST: localhost
+      POSTGRES_USER: dw_admin
+      POSTGRES_PASSWORD: dw_secure_pwd_2025
+      POSTGRES_DW_DB: data_warehouse
+
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -153,7 +159,12 @@ jobs:
 
       - name: dbt build (run + test)
         working-directory: dbt
-        run: dbt build --profiles-dir .
+        run: dbt build --profiles-dir . 2>&1
+
+      - name: Show dbt log on failure
+        if: failure()
+        working-directory: dbt
+        run: cat logs/dbt.log 2>/dev/null || echo "No dbt.log found"
 
       - name: dbt docs generate
         working-directory: dbt
